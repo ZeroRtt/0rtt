@@ -1,0 +1,13 @@
+[package]
+description = "A poll system for massive quiche connections."
+documentation = "https://docs.rs/quiche-poll"
+edition = "2024"
+license = "MIT"
+name = "quiche-poll"
+repository = "https://github.com/ZeroRtt/ZeroRtt/poll"
+version = "0.1.0"
+
+[dependencies]
+quiche = { version = "^0.24" }
+log = { version = "^0.4" }
+mio = "1.0.4"
