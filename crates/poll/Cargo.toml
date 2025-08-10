@@ -11,11 +11,12 @@ version = "0.1.0"
 quiche = { version = "^0.24" }
 log = { version = "^0.4" }
 thiserror = "2.0.12"
+priority-queue = "2.5.0"
 
 [dev-dependencies]
 divan = "0.1.21"
-
+rand = "0.9.2"
 
 [[bench]]
-name = "conn_stat"
+name = "deadline"
 harness = false

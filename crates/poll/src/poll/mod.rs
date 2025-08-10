@@ -4,7 +4,7 @@ mod errors;
 pub use errors::*;
 
 pub mod conn;
-pub mod timewheel;
+pub mod deadline;
 
 mod events;
 pub use events::*;

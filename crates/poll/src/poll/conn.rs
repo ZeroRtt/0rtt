@@ -247,7 +247,7 @@ impl ConnState {
         let now = Instant::now();
 
         // check if the connection has data to send.
-
+        //
         let release_time = min_of_some(
             conn.timeout_instant(),
             conn.get_next_release_time()
