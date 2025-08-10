@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use divan::Bencher;
 use quiche::Config;
 use quiche_poll::poll::conn::{ConnState, Lockind};
@@ -11,6 +13,7 @@ fn bench_lock(bencher: Bencher) {
     let scid = quiche::ConnectionId::from_ref(b"");
     let mut state = ConnState::new(
         0,
+        Duration::from_micros(250),
         quiche::connect(
             None,
             &scid,

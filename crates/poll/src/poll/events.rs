@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 /// Readiness event type.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub enum EventKind {
@@ -30,4 +32,6 @@ pub struct Event {
     pub conn_id: u32,
     /// optional stream id.
     pub stream_id: u64,
+    /// The event release time.
+    pub release_time: Option<Instant>,
 }

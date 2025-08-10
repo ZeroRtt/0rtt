@@ -1,8 +1,16 @@
-use std::{cell::UnsafeCell, collections::HashSet, fmt::Debug, time::Instant};
+use std::{
+    cell::UnsafeCell,
+    collections::HashSet,
+    fmt::Debug,
+    time::{Duration, Instant},
+};
 
 use quiche::Connection;
 
-use crate::poll::{Error, Event, EventKind, Result};
+use crate::{
+    poll::{Error, Event, EventKind, Result},
+    utils::min_of_some,
+};
 
 /// Internal lock for one `ConnState`
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
@@ -28,7 +36,7 @@ pub enum Lockind {
 impl Lockind {
     pub fn need_retry(&self) -> bool {
         match self {
-            Lockind::None | Lockind::StreamShutdown | Lockind::Close => false,
+            Lockind::None | Lockind::StreamShutdown | Lockind::Close | Lockind::Send => false,
             _ => true,
         }
     }
@@ -63,11 +71,13 @@ pub struct ConnState {
     /// Record the next locally opened bi-directional stream id
     #[allow(unused)]
     local_bidi_stream_id_next: u64,
+    /// release timer threshold
+    release_timer_threshold: Duration,
 }
 
 impl ConnState {
     /// Wrap a new `quiche::Connection`
-    pub fn new(id: u32, conn: quiche::Connection) -> Self {
+    pub fn new(id: u32, release_timer_threshold: Duration, conn: quiche::Connection) -> Self {
         Self {
             id,
             local_bidi_stream_id_next: if conn.is_server() { 5 } else { 4 },
@@ -75,6 +85,7 @@ impl ConnState {
             lock: Lockind::None,
             retry_lock_requests: Default::default(),
             lock_count: 0,
+            release_timer_threshold,
         }
     }
 
@@ -111,12 +122,16 @@ impl ConnState {
     ///
     /// Safety:
     /// - This function is protected by an upper-level spin-lock.
-    pub fn unlock<F>(&mut self, lock_count: u64, mut f: F) -> Option<Instant>
+    pub fn unlock<F>(&mut self, lock_count: u64, mut f: F)
     where
         F: FnMut(Event),
     {
         assert_ne!(self.lock, Lockind::None, "Unlock a released stat.");
         assert_eq!(self.lock_count, lock_count, "`lock_count` is mismatched.");
+
+        self.lock = Lockind::None;
+        // step `lock_count`
+        self.lock_count += 1;
 
         // Safety:
         // - only one thread can access this code at the same time.
@@ -132,6 +147,7 @@ impl ConnState {
                     conn_id: self.id,
                     // unset.
                     stream_id: 0,
+                    release_time: None,
                 });
             }
         }
@@ -139,14 +155,7 @@ impl ConnState {
         for kind in self.retry_lock_requests.drain() {
             match kind {
                 Lockind::Send => {
-                    f(Event {
-                        kind: EventKind::Send,
-                        lock_released: true,
-                        is_error: false,
-                        conn_id: self.id,
-                        // unset.
-                        stream_id: 0,
-                    });
+                    // We use `get_next_release_time` to determine if the connection has data to send.
                 }
                 Lockind::Recv => {
                     f(Event {
@@ -156,6 +165,7 @@ impl ConnState {
                         conn_id: self.id,
                         // unset.
                         stream_id: 0,
+                        release_time: None,
                     });
                 }
                 Lockind::StreamSend(stream_id, len) => {
@@ -171,6 +181,7 @@ impl ConnState {
                                     is_error: false,
                                     conn_id: self.id,
                                     stream_id,
+                                    release_time: None,
                                 });
                             }
                         }
@@ -188,6 +199,7 @@ impl ConnState {
                                 is_error: true,
                                 conn_id: self.id,
                                 stream_id,
+                                release_time: None,
                             });
                         }
                     }
@@ -200,6 +212,7 @@ impl ConnState {
                             is_error: false,
                             conn_id: self.id,
                             stream_id,
+                            release_time: None,
                         });
                     }
                 }
@@ -216,6 +229,7 @@ impl ConnState {
                 is_error: false,
                 conn_id: self.id,
                 stream_id,
+                release_time: None,
             });
         }
 
@@ -226,14 +240,33 @@ impl ConnState {
                 is_error: false,
                 conn_id: self.id,
                 stream_id,
+                release_time: None,
             });
         }
 
-        self.lock = Lockind::None;
-        // step `lock_count`
-        self.lock_count += 1;
+        let now = Instant::now();
 
-        conn.timeout_instant()
+        // check if the connection has data to send.
+
+        let release_time = min_of_some(
+            conn.timeout_instant(),
+            conn.get_next_release_time()
+                .and_then(|release| release.time(now)),
+        );
+
+        // check with `release_timer_threshold`
+        let release_time = release_time.filter(|time| {
+            time.checked_duration_since(now).unwrap_or_default() > self.release_timer_threshold
+        });
+
+        f(Event {
+            kind: EventKind::Send,
+            lock_released: false,
+            is_error: false,
+            conn_id: self.id,
+            stream_id: 0,
+            release_time,
+        });
     }
 
     #[inline]
@@ -242,6 +275,7 @@ impl ConnState {
     }
 
     /// Careful use this function.
+    #[inline]
     unsafe fn as_mut(&self) -> &'static mut Connection {
         unsafe { self.conn.get().as_mut().unwrap() }
     }
@@ -259,6 +293,7 @@ mod tests {
         let scid = quiche::ConnectionId::from_ref(b"");
         let mut state = ConnState::new(
             0,
+            Duration::from_micros(250),
             quiche::connect(
                 None,
                 &scid,
@@ -293,16 +328,7 @@ mod tests {
             events.push(event);
         });
 
-        assert_eq!(
-            events,
-            vec![Event {
-                kind: EventKind::Recv,
-                lock_released: true,
-                is_error: false,
-                conn_id: 0,
-                stream_id: 0,
-            }]
-        );
+        assert_eq!(events[0].kind, EventKind::Recv);
 
         let guard = state.try_lock(Lockind::Recv).expect("Lockind::Recv");
         assert_eq!(guard.lock_count, 1, "step `lock_count`");
