@@ -13,6 +13,12 @@ impl Deadline {
         self.0.push(conn_id, Reverse(deadline));
     }
 
+    /// Deletes the deadline for a connection.
+    #[inline]
+    pub fn remove(&mut self, conn_id: &u32) {
+        self.0.remove(conn_id);
+    }
+
     /// Returns the nearest deadline.
     #[inline]
     pub fn deadline(&self) -> Option<Instant> {

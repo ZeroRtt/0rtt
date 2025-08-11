@@ -75,6 +75,13 @@ pub struct ConnState {
     release_timer_threshold: Duration,
 }
 
+/// unwrap `quiche::Connection` from `ConnState`
+impl From<ConnState> for quiche::Connection {
+    fn from(value: ConnState) -> Self {
+        value.conn.into_inner()
+    }
+}
+
 impl ConnState {
     /// Wrap a new `quiche::Connection`
     pub fn new(id: u32, release_timer_threshold: Duration, conn: quiche::Connection) -> Self {

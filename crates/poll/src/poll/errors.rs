@@ -15,6 +15,10 @@ pub enum Error {
     /// Resource is busy, should retry this operation later.
     #[error("Resource is busy.")]
     Busy,
+
+    /// Resource  is not found.
+    #[error("Resource is not found.")]
+    NotFound,
 }
 
 /// Short for `std::result::Result<T, crate::poll::Error>`
