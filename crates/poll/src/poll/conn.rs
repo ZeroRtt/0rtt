@@ -9,7 +9,7 @@ use quiche::Connection;
 
 use crate::{
     poll::{Error, Event, EventKind, Result},
-    utils::min_of_some,
+    utils::release_time,
 };
 
 /// Internal lock for one `ConnState`
@@ -69,7 +69,6 @@ pub struct ConnState {
     /// The count of lock times used as lock tracking handle.
     lock_count: u64,
     /// Record the next locally opened bi-directional stream id
-    #[allow(unused)]
     local_bidi_stream_id_next: u64,
     /// release timer threshold
     release_timer_threshold: Duration,
@@ -94,6 +93,38 @@ impl ConnState {
             lock_count: 0,
             release_timer_threshold,
         }
+    }
+
+    // Try open a new bidi-outbound-stream.
+    pub fn stream_open<F>(&mut self, f: F) -> Result<u64>
+    where
+        F: FnMut(Event),
+    {
+        // check if this thread own the state.
+        let guard = self.try_lock(Lockind::StreamOpen)?;
+
+        // Safety: only one thread can access this code at the same time.
+        let conn = unsafe { self.as_mut() };
+
+        if conn.peer_streams_left_bidi() > 0 {
+            let stream_id = self.local_bidi_stream_id_next;
+            self.local_bidi_stream_id_next += 4;
+
+            // this a trick, func `stream_priority` will created the target if did not exist.
+            conn.stream_priority(stream_id, 255, true)?;
+
+            self.unlock(guard.lock_count, f);
+
+            return Ok(stream_id);
+        }
+
+        assert_eq!(
+            self.try_lock(Lockind::StreamOpen)
+                .expect_err("insert `Lockind::StreamOpen` into retry_lock_requests"),
+            Error::Busy
+        );
+
+        Err(Error::Retry)
     }
 
     /// Try lock this `state`.
@@ -144,6 +175,8 @@ impl ConnState {
         // - only one thread can access this code at the same time.
         let conn = unsafe { self.as_mut() };
 
+        let mut retry_stream_open = false;
+
         // check `peer_streams_left_bidi`
         if self.retry_lock_requests.remove(&Lockind::StreamOpen) {
             if conn.peer_streams_left_bidi() > 0 {
@@ -156,6 +189,8 @@ impl ConnState {
                     stream_id: 0,
                     release_time: None,
                 });
+            } else {
+                retry_stream_open = true;
             }
         }
 
@@ -229,6 +264,10 @@ impl ConnState {
             }
         }
 
+        if retry_stream_open {
+            self.retry_lock_requests.insert(Lockind::StreamOpen);
+        }
+
         while let Some(stream_id) = conn.stream_writable_next() {
             f(Event {
                 kind: EventKind::StreamSend,
@@ -254,17 +293,7 @@ impl ConnState {
         let now = Instant::now();
 
         // check if the connection has data to send.
-        //
-        let release_time = min_of_some(
-            conn.timeout_instant(),
-            conn.get_next_release_time()
-                .and_then(|release| release.time(now)),
-        );
-
-        // check with `release_timer_threshold`
-        let release_time = release_time.filter(|time| {
-            time.checked_duration_since(now).unwrap_or_default() > self.release_timer_threshold
-        });
+        let release_time = release_time(conn, now, self.release_timer_threshold);
 
         f(Event {
             kind: EventKind::Send,
