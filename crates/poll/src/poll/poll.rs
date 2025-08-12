@@ -97,7 +97,7 @@ struct PollStateGuard<'a> {
 impl<'a> Drop for PollStateGuard<'a> {
     fn drop(&mut self) {
         self.poll.lock_state(|state| {
-            /// Safety: protected by top spin-lock.
+            // Safety: protected by top spin-lock.
             let readiness = unsafe { state.readiness() };
 
             let conn = state
@@ -409,7 +409,7 @@ impl Poll {
         let conn_id = conn.0;
 
         self.lock_state(|state| -> Result<_> {
-            /// Safety: protected by top spin-lock.
+            // Safety: protected by top spin-lock.
             let readiness = unsafe { state.readiness() };
 
             let conn = state

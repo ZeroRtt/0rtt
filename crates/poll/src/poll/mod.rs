@@ -9,6 +9,5 @@ pub mod deadline;
 mod events;
 pub use events::*;
 
-#[allow(unused)]
 mod poll;
 pub use poll::*;
