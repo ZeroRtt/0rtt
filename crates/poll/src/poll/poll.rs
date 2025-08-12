@@ -1,8 +1,7 @@
 use std::{
     cell::UnsafeCell,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -12,9 +11,9 @@ use crate::{
     poll::{
         Error, Event, EventKind, Result,
         conn::{ConnState, ConnStateGuard, Lockind},
-        deadline::Deadline,
+        readiness::Readiness,
     },
-    utils::release_time,
+    utils::{min_of_some, release_time},
 };
 
 static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
@@ -40,37 +39,6 @@ impl PollState {
     }
 }
 
-#[derive(Default)]
-struct Readiness {
-    /// delayed `send` events.
-    delayed: Deadline,
-    /// readiness events.
-    immediate: HashSet<Event>,
-}
-
-impl Readiness {
-    fn insert_event(&mut self, event: Event) {
-        if event.kind == EventKind::Send {
-            if let Some(release_time) = event.release_time {
-                self.delayed.insert(event.conn_id, release_time);
-                return;
-            }
-        }
-
-        self.immediate.insert(event);
-    }
-
-    #[inline]
-    fn insert_delayed_send_event(&mut self, conn_id: u32, deadline: Instant) {
-        self.delayed.insert(conn_id, deadline);
-    }
-
-    #[inline]
-    fn remove_delayed_send_event(&mut self, conn_id: u32) {
-        self.delayed.remove(&conn_id);
-    }
-}
-
 /// Socket for quic connection created by [`register`](Poll::register) function.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct QuicConn(pub u32);
@@ -78,15 +46,6 @@ pub struct QuicConn(pub u32);
 /// Socket for quic stream.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct QuicStream(pub u32, pub u64);
-
-/// Poll for readiness events on all registered quiche connections.
-#[derive(Default)]
-pub struct Poll {
-    /// top spin-lock.
-    lock: AtomicBool,
-    /// internal state protected by spin-lock.
-    state: UnsafeCell<PollState>,
-}
 
 struct PollStateGuard<'a> {
     conn_id: u32,
@@ -108,6 +67,10 @@ impl<'a> Drop for PollStateGuard<'a> {
             conn.unlock(self.conn_state_guard.lock_count, |event| {
                 readiness.insert_event(event)
             });
+
+            if !readiness.is_empty() {
+                self.poll.condvar.notify_one();
+            }
         });
     }
 }
@@ -126,25 +89,23 @@ impl<'a> DerefMut for PollStateGuard<'a> {
     }
 }
 
+/// Poll for readiness events on all registered quiche connections.
+#[derive(Default)]
+pub struct Poll {
+    state: parking_lot::Mutex<PollState>,
+    condvar: parking_lot::Condvar,
+}
+
 impl Poll {
     /// Access the spin-lock protected `state`.
+    #[inline]
     fn lock_state<F, O>(&self, f: F) -> O
     where
         F: FnOnce(&mut PollState) -> O,
     {
-        while self
-            .lock
-            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            // No need to worry about dead cycles taking up cpu time,
-            // all internal locking operations will be done in a few
-            // microseconds.
-        }
+        let mut guard = self.state.lock();
 
-        let out = f(unsafe { self.state.get().as_mut().unwrap() });
-
-        self.lock.store(false, Ordering::Release);
+        let out = f(&mut guard);
 
         out
     }
@@ -423,5 +384,47 @@ impl Poll {
 
             Ok(QuicStream(conn_id, stream_id))
         })
+    }
+
+    /// Wait for readiness events
+    pub fn poll(&self, events: &mut Vec<Event>, timeout: Option<Duration>) -> Result<()> {
+        let timeout = timeout.map(|timeout| Instant::now() + timeout);
+
+        let mut state = self.state.lock();
+
+        let readiness = unsafe { state.readiness() };
+
+        loop {
+            events.extend(readiness.immediate());
+
+            if !events.is_empty()
+                || timeout
+                    .filter(|timeout| !(Instant::now() < *timeout))
+                    .is_some()
+            {
+                return Ok(());
+            }
+
+            let next_delayed_send_event = readiness.next_delayed_send_event();
+
+            let timeout = min_of_some(timeout, next_delayed_send_event);
+
+            if let Some(timeout) = timeout {
+                self.condvar.wait_until(&mut state, timeout);
+            } else {
+                self.condvar.wait(&mut state);
+            }
+
+            for conn_id in readiness.timeout() {
+                events.push(Event {
+                    kind: EventKind::Send,
+                    lock_released: false,
+                    is_error: false,
+                    conn_id,
+                    stream_id: 0,
+                    release_time: None,
+                });
+            }
+        }
     }
 }

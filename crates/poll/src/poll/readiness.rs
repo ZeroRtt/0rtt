@@ -1,6 +1,8 @@
-use std::{cmp::Reverse, time::Instant};
+use std::{cmp::Reverse, collections::HashSet, time::Instant};
 
 use priority_queue::PriorityQueue;
+
+use crate::poll::{Event, EventKind};
 
 /// tiny timing-wheel for internal use
 #[derive(Default, Clone)]
@@ -53,6 +55,59 @@ impl<'a> Iterator for Timeout<'a> {
         }
 
         return None;
+    }
+}
+
+/// Readiness events.
+#[derive(Default)]
+pub(crate) struct Readiness {
+    /// delayed `send` events.
+    delayed: Deadline,
+    /// readiness events.
+    immediate: HashSet<Event>,
+}
+
+impl Readiness {
+    #[inline]
+    pub fn insert_event(&mut self, event: Event) {
+        if event.kind == EventKind::Send {
+            if let Some(release_time) = event.release_time {
+                self.delayed.insert(event.conn_id, release_time);
+                return;
+            }
+        }
+
+        self.immediate.insert(event);
+    }
+
+    #[inline]
+    pub fn next_delayed_send_event(&self) -> Option<Instant> {
+        self.delayed.deadline()
+    }
+
+    #[inline]
+    pub fn insert_delayed_send_event(&mut self, conn_id: u32, deadline: Instant) {
+        self.delayed.insert(conn_id, deadline);
+    }
+
+    #[inline]
+    pub fn remove_delayed_send_event(&mut self, conn_id: u32) {
+        self.delayed.remove(&conn_id);
+    }
+
+    #[inline]
+    pub fn immediate(&mut self) -> impl Iterator<Item = Event> {
+        self.immediate.drain()
+    }
+
+    #[inline]
+    pub fn timeout(&mut self) -> impl Iterator<Item = u32> {
+        self.delayed.timeout(Instant::now())
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.immediate.is_empty()
     }
 }
 

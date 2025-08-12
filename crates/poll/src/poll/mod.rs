@@ -4,7 +4,7 @@ mod errors;
 pub use errors::*;
 
 pub mod conn;
-pub mod deadline;
+pub mod readiness;
 
 mod events;
 pub use events::*;

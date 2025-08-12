@@ -1,10 +1,11 @@
 use std::{
     cmp,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use divan::Bencher;
-use quiche_poll::poll::deadline::Deadline;
+use quiche_poll::poll::readiness::Deadline;
 
 fn main() {
     divan::main();
@@ -53,4 +54,13 @@ fn bench_deadline_timeout(bencher: Bencher) {
         .bench_values(|(mut deadline, now, range_max)| {
             for _ in deadline.timeout(now + Duration::from_secs(cmp::min(100, range_max) as u64)) {}
         });
+}
+
+#[divan::bench(sample_count = 1000, threads = 1)]
+fn bench_parking_lot_mutex(bencher: Bencher) {
+    let mutex = Arc::new(parking_lot::Mutex::new(()));
+
+    bencher.with_inputs(|| mutex.clone()).bench_values(|mutex| {
+        drop(mutex.lock());
+    });
 }
