@@ -8,11 +8,9 @@ use std::{
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
 use crate::{
-    poll::{
-        Error, Event, EventKind, Result,
-        conn::{ConnState, ConnStateGuard, Lockind},
-        readiness::Readiness,
-    },
+    Error, Event, EventKind, Result,
+    conn::{ConnState, ConnStateGuard, Lockind},
+    readiness::Readiness,
     utils::{min_of_some, release_time},
 };
 
@@ -97,6 +95,11 @@ pub struct Poll {
 }
 
 impl Poll {
+    /// Create a new poll instance for quiche connections.
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     /// Access the spin-lock protected `state`.
     #[inline]
     fn lock_state<F, O>(&self, f: F) -> O
@@ -426,5 +429,22 @@ impl Poll {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_poll_blocking() {
+        let poll = Poll::new();
+
+        let mut events = vec![];
+
+        poll.poll(&mut events, Some(Duration::from_secs(1)))
+            .unwrap();
+
+        assert_eq!(events.len(), 0);
     }
 }

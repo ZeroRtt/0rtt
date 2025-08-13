@@ -2,11 +2,11 @@ use std::{cmp::Reverse, collections::HashSet, time::Instant};
 
 use priority_queue::PriorityQueue;
 
-use crate::poll::{Event, EventKind};
+use crate::{Event, EventKind};
 
 /// tiny timing-wheel for internal use
 #[derive(Default, Clone)]
-pub struct Deadline(PriorityQueue<u32, Reverse<Instant>>);
+pub(crate) struct Deadline(PriorityQueue<u32, Reverse<Instant>>);
 
 impl Deadline {
     /// Insert a new deadline.

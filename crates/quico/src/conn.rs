@@ -7,10 +7,7 @@ use std::{
 
 use quiche::Connection;
 
-use crate::{
-    poll::{Error, Event, EventKind, Result},
-    utils::release_time,
-};
+use crate::{Error, Event, EventKind, Result, utils::release_time};
 
 /// Internal lock for one `ConnState`
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
