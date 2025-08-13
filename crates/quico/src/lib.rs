@@ -15,5 +15,5 @@ pub use events::*;
 mod poll;
 pub use poll::*;
 
-mod validator;
-pub use validator::*;
+mod server;
+pub use server::*;

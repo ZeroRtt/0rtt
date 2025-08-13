@@ -3,13 +3,14 @@
 //! [`address validation`]: https://datatracker.ietf.org/doc/html/rfc9000#name-address-validation
 
 use std::{
-    io::Result,
     net::SocketAddr,
     time::{Duration, SystemTime},
 };
 
 use boring::sha::Sha256;
 use quiche::ConnectionId;
+
+use crate::Result;
 
 /// Address validation trait.
 pub trait AddressValidator {
@@ -205,3 +206,6 @@ mod tests {
         // timeout.
     }
 }
+
+/// Quic connection acceptor for server-side.
+pub struct Acceptor {}

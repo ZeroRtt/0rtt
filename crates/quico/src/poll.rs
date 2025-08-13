@@ -218,18 +218,16 @@ impl Poll {
     }
 
     /// Processes QUIC packets received from the peer.
-    pub fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
-        let header =
-            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
-
-        // TODO: check header `ty`
-
-        let scid = header.dcid;
-
+    pub fn recv_with_destination_id(
+        &self,
+        dcid: &ConnectionId<'_>,
+        buf: &mut [u8],
+        info: RecvInfo,
+    ) -> Result<usize> {
         let mut conn = self.lock_state(|state| -> Result<_> {
             let conn_id = state
                 .scids
-                .get(&scid)
+                .get(dcid)
                 .cloned()
                 .ok_or_else(|| Error::NotFound)?;
 
@@ -261,6 +259,14 @@ impl Poll {
                 Err(Error::Quiche(err))
             }
         }
+    }
+
+    /// Processes QUIC packets received from the peer.
+    pub fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
+        let header =
+            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
+
+        self.recv_with_destination_id(&header.dcid, buf, info)
     }
 
     /// Writes data to a stream.
