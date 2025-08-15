@@ -17,7 +17,7 @@ use crate::{
 static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
 
 #[derive(Default)]
-struct PollState {
+struct GroupState {
     /// connection id generator.
     conn_id_next: u32,
     /// Internally managed connection state set.
@@ -28,7 +28,7 @@ struct PollState {
     readiness: UnsafeCell<Readiness>,
 }
 
-impl PollState {
+impl GroupState {
     /// Get readiness ptr. this is an unsafe function,
     /// must make sure only one thread can access this
     /// function at the same time.
@@ -60,7 +60,7 @@ impl From<(u32, u64)> for QuicStream {
 struct PollStateGuard<'a> {
     conn_id: u32,
     conn_state_guard: ConnStateGuard,
-    poll: &'a Poll,
+    poll: &'a Group,
 }
 
 impl<'a> Drop for PollStateGuard<'a> {
@@ -99,15 +99,15 @@ impl<'a> DerefMut for PollStateGuard<'a> {
     }
 }
 
-/// Poll for readiness events on all registered quiche connections.
+///  Multiplexer for readiness events on all registered quiche connections.
 #[derive(Default)]
-pub struct Poll {
-    state: parking_lot::Mutex<PollState>,
+pub struct Group {
+    state: parking_lot::Mutex<GroupState>,
     condvar: parking_lot::Condvar,
 }
 
-impl Poll {
-    /// Create a new poll instance for quiche connections.
+impl Group {
+    /// Create a new `Multiplexer`.
     pub fn new() -> Self {
         Default::default()
     }
@@ -116,7 +116,7 @@ impl Poll {
     #[inline]
     fn lock_state<F, O>(&self, f: F) -> O
     where
-        F: FnOnce(&mut PollState) -> O,
+        F: FnOnce(&mut GroupState) -> O,
     {
         let mut guard = self.state.lock();
 
@@ -177,11 +177,6 @@ impl Poll {
         })
     }
 
-    /// Returns true if the connection with `scid` exists.
-    pub fn contains(&self, scid: &ConnectionId<'_>) -> bool {
-        self.lock_state(|state| state.scids.contains_key(scid))
-    }
-
     /// Writes a single QUIC packet to be sent to the peer.
     pub fn send<Q: Into<QuicConn>>(&self, conn: Q, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
         let conn = conn.into();
@@ -215,6 +210,9 @@ impl Poll {
             return Err(Error::Retry);
         }
 
+        // TODO: prevent frequent calls to on_timeout
+        conn.on_timeout();
+
         match conn.send(buf) {
             Ok((send_size, send_info)) => {
                 log::trace!(
@@ -236,8 +234,8 @@ impl Poll {
         }
     }
 
-    /// Processes QUIC packets received from the peer.
-    pub fn recv_with(
+    /// Processes QUIC packets received from the peer and writes a single QUIC packet to be sent to the peer..
+    pub fn recv_and_send_with(
         &self,
         scid: &ConnectionId<'_>,
         buf: &mut [u8],
@@ -306,7 +304,7 @@ impl Poll {
             }
             Err(quiche::Error::Done) => {
                 log::trace!("connection send, scid={:?}, done", conn.trace_id());
-                return Err(Error::Retry);
+                return Ok(None);
             }
             Err(err) => {
                 log::error!("connection send, scid={:?}, err={}", conn.trace_id(), err);
@@ -315,8 +313,8 @@ impl Poll {
         }
     }
 
-    /// Processes QUIC packets received from the peer.
-    pub fn recv(
+    /// Processes QUIC packets received from the peer and writes a single QUIC packet to be sent to the peer..
+    pub fn recv_and_send(
         &self,
         buf: &mut [u8],
         recv_size: usize,
@@ -325,7 +323,7 @@ impl Poll {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-        self.recv_with(&header.dcid, buf, recv_size, info)
+        self.recv_and_send_with(&header.dcid, buf, recv_size, info)
     }
 
     /// Writes data to a stream.
@@ -516,7 +514,7 @@ mod tests {
 
     #[test]
     fn test_poll_blocking() {
-        let poll = Poll::new();
+        let poll = Group::new();
 
         let mut events = vec![];
 

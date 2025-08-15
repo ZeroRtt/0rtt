@@ -12,8 +12,17 @@ mod readiness;
 mod events;
 pub use events::*;
 
-mod poll;
-pub use poll::*;
+mod group;
+pub use group::*;
 
-mod server;
-pub use server::*;
+#[cfg(feature = "server")]
+#[cfg_attr(docsrs, doc(cfg(feature = "server")))]
+mod address_validation;
+#[cfg(feature = "server")]
+pub use address_validation::*;
+
+#[cfg(feature = "server")]
+#[cfg_attr(docsrs, doc(cfg(feature = "server")))]
+mod acceptor;
+#[cfg(feature = "server")]
+pub use acceptor::*;
