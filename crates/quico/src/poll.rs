@@ -41,9 +41,21 @@ impl PollState {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct QuicConn(pub u32);
 
+impl From<u32> for QuicConn {
+    fn from(value: u32) -> Self {
+        QuicConn(value)
+    }
+}
+
 /// Socket for quic stream.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct QuicStream(pub u32, pub u64);
+
+impl From<(u32, u64)> for QuicStream {
+    fn from(value: (u32, u64)) -> Self {
+        QuicStream(value.0, value.1)
+    }
+}
 
 struct PollStateGuard<'a> {
     conn_id: u32,
@@ -165,8 +177,15 @@ impl Poll {
         })
     }
 
+    /// Returns true if the connection with `scid` exists.
+    pub fn contains(&self, scid: &ConnectionId<'_>) -> bool {
+        self.lock_state(|state| state.scids.contains_key(scid))
+    }
+
     /// Writes a single QUIC packet to be sent to the peer.
-    pub fn send(&self, conn: QuicConn, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
+    pub fn send<Q: Into<QuicConn>>(&self, conn: Q, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
+        let conn = conn.into();
+
         let conn_id = conn.0;
 
         let mut conn = self.lock_state(|state| -> Result<_> {
@@ -218,16 +237,17 @@ impl Poll {
     }
 
     /// Processes QUIC packets received from the peer.
-    pub fn recv_with_destination_id(
+    pub fn recv_with(
         &self,
-        dcid: &ConnectionId<'_>,
+        scid: &ConnectionId<'_>,
         buf: &mut [u8],
+        recv_size: usize,
         info: RecvInfo,
-    ) -> Result<usize> {
-        let mut conn = self.lock_state(|state| -> Result<_> {
+    ) -> Result<Option<(usize, SendInfo)>> {
+        let (conn_id, mut conn) = self.lock_state(|state| -> Result<_> {
             let conn_id = state
                 .scids
-                .get(dcid)
+                .get(scid)
                 .cloned()
                 .ok_or_else(|| Error::NotFound)?;
 
@@ -238,39 +258,85 @@ impl Poll {
 
             let conn_state_guard = conn.try_lock(Lockind::Recv)?;
 
-            Ok(PollStateGuard {
+            Ok((
                 conn_id,
-                conn_state_guard,
-                poll: self,
-            })
+                PollStateGuard {
+                    conn_id,
+                    conn_state_guard,
+                    poll: self,
+                },
+            ))
         })?;
 
-        match conn.recv(buf, info) {
+        match conn.recv(&mut buf[..recv_size], info) {
             Ok(recv_size) => {
                 log::trace!(
                     "Connection recv, scid={:?}, len={}",
                     conn.source_id(),
                     recv_size
                 );
-                Ok(recv_size)
             }
             Err(err) => {
                 log::error!("Connection recv, scid={:?}, err={}", conn.source_id(), err);
-                Err(Error::Quiche(err))
+                return Err(Error::Quiche(err));
+            }
+        }
+
+        let release_time = release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD);
+
+        if let Some(deadline) = release_time {
+            self.lock_state(|state| unsafe {
+                state
+                    .readiness()
+                    .insert_delayed_send_event(conn_id, deadline);
+            });
+
+            return Ok(None);
+        }
+
+        match conn.send(buf) {
+            Ok((send_size, send_info)) => {
+                log::trace!(
+                    "connection send, scid={:?}, send_size={}, send_info={:?}",
+                    conn.trace_id(),
+                    send_size,
+                    send_info
+                );
+                return Ok(Some((send_size, send_info)));
+            }
+            Err(quiche::Error::Done) => {
+                log::trace!("connection send, scid={:?}, done", conn.trace_id());
+                return Err(Error::Retry);
+            }
+            Err(err) => {
+                log::error!("connection send, scid={:?}, err={}", conn.trace_id(), err);
+                return Err(Error::Quiche(err));
             }
         }
     }
 
     /// Processes QUIC packets received from the peer.
-    pub fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
+    pub fn recv(
+        &self,
+        buf: &mut [u8],
+        recv_size: usize,
+        info: RecvInfo,
+    ) -> Result<Option<(usize, SendInfo)>> {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-        self.recv_with_destination_id(&header.dcid, buf, info)
+        self.recv_with(&header.dcid, buf, recv_size, info)
     }
 
     /// Writes data to a stream.
-    pub fn stream_send(&self, stream: QuicStream, buf: &[u8], fin: bool) -> Result<usize> {
+    pub fn stream_send<S: Into<QuicStream>>(
+        &self,
+        stream: S,
+        buf: &[u8],
+        fin: bool,
+    ) -> Result<usize> {
+        let stream = stream.into();
+
         let mut conn = self.lock_state(|state| -> Result<_> {
             let conn = state
                 .conn_stats
@@ -326,7 +392,13 @@ impl Poll {
     }
 
     /// Reads contiguous data from a stream into the provided slice.
-    pub fn stream_recv(&self, stream: QuicStream, buf: &mut [u8]) -> Result<(usize, bool)> {
+    pub fn stream_recv<S: Into<QuicStream>>(
+        &self,
+        stream: S,
+        buf: &mut [u8],
+    ) -> Result<(usize, bool)> {
+        let stream = stream.into();
+
         let mut conn = self.lock_state(|state| -> Result<_> {
             let conn = state
                 .conn_stats
