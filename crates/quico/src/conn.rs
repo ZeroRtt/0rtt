@@ -141,6 +141,20 @@ impl ConnState {
         // - only one thread can access this code at the same time.
         let conn = unsafe { self.as_mut() };
 
+        if conn.is_closed() {
+            readiness.insert(
+                Event {
+                    kind: EventKind::Closed,
+                    is_server: conn.is_server(),
+                    is_error: false,
+                    token: self.id,
+                    // unset.
+                    stream_id: 0,
+                },
+                None,
+            );
+        }
+
         let mut retry_stream_open = false;
 
         // check `peer_streams_left_bidi`
