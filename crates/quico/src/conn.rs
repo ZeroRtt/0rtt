@@ -5,12 +5,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use quiche::Connection;
+use quiche::{Connection, Shutdown};
 
 use crate::{Error, Event, EventKind, Readiness, Result, Token, utils::release_time};
 
 /// `ConnState` resource acquire kind.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum LocKind {
     None,
     Send,
@@ -19,13 +19,18 @@ pub enum LocKind {
     StreamOpen,
     StreamSend(u64, usize),
     StreamRecv(u64),
-    StreamShutdown,
+    StreamShutdown {
+        shutdown_read: bool,
+        shutdown_write: bool,
+        stream_id: u64,
+        err: u64,
+    },
 }
 
 impl LocKind {
     pub fn need_retry(&self) -> bool {
         match self {
-            LocKind::None | LocKind::StreamShutdown | LocKind::Close | LocKind::Send => false,
+            LocKind::None | LocKind::Send => false,
             _ => true,
         }
     }
@@ -231,6 +236,45 @@ impl ConnState {
                         );
                     }
                 }
+                LocKind::StreamShutdown {
+                    stream_id,
+                    shutdown_read,
+                    shutdown_write,
+                    err,
+                } => {
+                    if shutdown_read {
+                        if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, err) {
+                            log::error!(
+                                "shutdown read, scid={:?}, stream_id={}, err={}",
+                                conn.source_id(),
+                                stream_id,
+                                err
+                            );
+                        }
+                    }
+
+                    if shutdown_write {
+                        if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Write, err) {
+                            log::error!(
+                                "shutdown write, scid={:?}, stream_id={}, err={}",
+                                conn.source_id(),
+                                stream_id,
+                                err
+                            );
+                        }
+                    }
+                }
+                LocKind::Close => {
+                    if let Err(err) = conn.close(false, 0x0, b"") {
+                        if err != quiche::Error::Done {
+                            log::error!(
+                                "close connection, scid={:?}, err={}",
+                                conn.source_id(),
+                                err
+                            );
+                        }
+                    }
+                }
                 _ => {
                     unreachable!("unexpect {:?}", kind)
                 }
@@ -270,7 +314,7 @@ impl ConnState {
         let now = Instant::now();
 
         // check if the connection has data to send.
-        let release_time = release_time(conn, now, release_timer_threshold);
+        let delay_to = release_time(conn, now, release_timer_threshold);
 
         readiness.insert(
             Event {
@@ -280,7 +324,7 @@ impl ConnState {
                 token: self.id,
                 stream_id: 0,
             },
-            None,
+            delay_to,
         );
     }
 
@@ -313,6 +357,8 @@ impl ConnState {
                 .expect_err("insert `LocKind::StreamOpen` into retry_lock_requests"),
             Error::Busy
         );
+
+        self.unlock(guard.lock_count, release_timer_threshold, readiness);
 
         Err(Error::Retry)
     }
@@ -370,5 +416,37 @@ mod tests {
 
         let guard = state.try_lock(LocKind::Recv).expect("LocKind::Recv");
         assert_eq!(guard.lock_count, 1, "step `lock_count`");
+    }
+
+    #[test]
+    fn test_stream_open() {
+        let scid = quiche::ConnectionId::from_ref(b"");
+        let mut state = ConnState::new(
+            Token(0),
+            quiche::connect(
+                None,
+                &scid,
+                "127.0.0.1:1".parse().unwrap(),
+                "127.0.0.1:2".parse().unwrap(),
+                &mut Config::new(quiche::PROTOCOL_VERSION).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mut readiness = Readiness::default();
+
+        assert_eq!(
+            state
+                .stream_open(Duration::from_micros(250), &mut readiness)
+                .expect_err("pending"),
+            Error::Retry
+        );
+
+        assert_eq!(
+            state
+                .stream_open(Duration::from_micros(250), &mut readiness)
+                .expect_err("pending"),
+            Error::Retry
+        );
     }
 }
