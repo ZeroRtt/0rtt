@@ -32,6 +32,8 @@ pub struct Event {
     pub kind: EventKind,
     /// Event source is a server-side connection.
     pub is_server: bool,
+    /// Event raised by an I/O error.
+    pub is_error: bool,
     /// Connection token.
     pub token: Token,
     /// Optional stream identifier for the event source.
@@ -43,9 +45,9 @@ pub struct Event {
 #[derive(Default)]
 pub struct Readiness {
     /// delayed event priority queue.
-    delayed: PriorityQueue<Event, Reverse<Instant>>,
+    pub(crate) delayed: PriorityQueue<Event, Reverse<Instant>>,
     /// readiness events.
-    events: HashSet<Event>,
+    pub(crate) events: HashSet<Event>,
 }
 
 impl Readiness {
@@ -108,6 +110,7 @@ mod tests {
             Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             },
@@ -118,6 +121,7 @@ mod tests {
             Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             },
@@ -133,6 +137,7 @@ mod tests {
             vec![Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             }]
@@ -149,6 +154,7 @@ mod tests {
             Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             },
@@ -159,6 +165,7 @@ mod tests {
             Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             },
@@ -174,6 +181,7 @@ mod tests {
             vec![Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             }]

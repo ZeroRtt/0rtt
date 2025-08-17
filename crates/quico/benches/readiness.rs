@@ -16,6 +16,7 @@ fn bench_insert_without_delay(bencher: Bencher) {
             Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             },
@@ -35,6 +36,7 @@ fn bench_insert_with_delay(bencher: Bencher) {
             Event {
                 kind: EventKind::Send,
                 is_server: false,
+                is_error: false,
                 token: Token(0),
                 stream_id: 0,
             },
@@ -64,6 +66,7 @@ fn bench_poll(bencher: Bencher) {
                 Event {
                     kind: EventKind::Send,
                     is_server: false,
+                    is_error: false,
                     token: Token(0),
                     stream_id: 0,
                 },
