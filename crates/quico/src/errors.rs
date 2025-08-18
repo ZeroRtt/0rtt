@@ -19,6 +19,9 @@ pub enum Error {
     /// Resource  is not found.
     #[error("Resource is not found.")]
     NotFound,
+
+    #[error("Failed to validate client address.")]
+    ValidateAddress,
 }
 
 /// Short for `std::result::Result<T, crate::poll::Error>`

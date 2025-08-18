@@ -24,11 +24,17 @@ pub struct Registration {
 impl Registration {
     /// Register and host `quiche::Connection`
     #[inline(always)]
-    pub fn register(&mut self, conn: Connection) -> Result<Token> {
+    pub fn register(
+        &mut self,
+        conn: Connection,
+        release_timer_threshold: Duration,
+    ) -> Result<Token> {
+        let readiness = unsafe { self.readiness() };
+
         loop {
             let token = Token(self.conn_id_next);
 
-            self.conn_id_next += 1;
+            (self.conn_id_next, _) = self.conn_id_next.overflowing_add(1);
 
             if self.conn_stats.contains_key(&token) {
                 continue;
@@ -40,7 +46,10 @@ impl Registration {
                     .is_none()
             );
 
-            self.conn_stats.insert(token, ConnState::new(token, conn));
+            self.conn_stats.insert(
+                token,
+                ConnState::new_with_readiness(token, conn, release_timer_threshold, readiness),
+            );
 
             return Ok(token);
         }
@@ -66,7 +75,7 @@ impl Registration {
 
     /// Carefully: use this function within the scope of spin-lock protection.
     #[inline(always)]
-    unsafe fn readiness(&mut self) -> &'static mut Readiness {
+    pub unsafe fn readiness(&mut self) -> &'static mut Readiness {
         unsafe { self.readiness.get().as_mut().unwrap() }
     }
 
@@ -94,6 +103,17 @@ impl Registration {
         }
 
         Err(Error::NotFound)
+    }
+
+    /// Try open a outbound stream.
+    pub fn stream_open(&mut self, token: Token, release_timer_threshold: Duration) -> Result<u64> {
+        let readiness = unsafe { self.readiness() };
+
+        if let Some(state) = self.conn_stats.get_mut(&token) {
+            state.stream_open(release_timer_threshold, readiness)
+        } else {
+            Err(Error::NotFound)
+        }
     }
 
     /// Unlock connection.

@@ -9,8 +9,10 @@ pub enum EventKind {
     Send,
     /// Readiness for `recv` operation.
     Recv,
-    /// Connection handshake is complete.
-    Established,
+    /// Client-side connection handshake is completed.
+    Connected,
+    /// Server-side connection handshake is completed.
+    Accept,
     /// Connection is closed.
     Closed,
     /// Readiness for `stream_open` operation.

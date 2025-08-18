@@ -86,6 +86,19 @@ impl ConnState {
         }
     }
 
+    pub fn new_with_readiness(
+        id: Token,
+        conn: quiche::Connection,
+        release_timer_threshold: Duration,
+        readiness: &mut Readiness,
+    ) -> Self {
+        let mut state = Self::new(id, conn);
+
+        state.raise_events(release_timer_threshold, readiness);
+
+        state
+    }
+
     #[inline]
     fn retry_later(&mut self, kind: LocKind) {
         self.retries.insert(kind);
@@ -137,6 +150,10 @@ impl ConnState {
         // step `lock_count`
         self.lock_count += 1;
 
+        self.raise_events(release_timer_threshold, readiness);
+    }
+
+    fn raise_events(&mut self, release_timer_threshold: Duration, readiness: &mut Readiness) {
         // Safety:
         // - only one thread can access this code at the same time.
         let conn = unsafe { self.as_mut() };
