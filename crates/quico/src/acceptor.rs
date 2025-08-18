@@ -1,6 +1,8 @@
-use quiche::{Connection, Header, RecvInfo};
+use std::time::Instant;
 
-use crate::{Error, Group, Result, Token, utils::random_conn_id, validation::AddressValidator};
+use quiche::{Connection, Header, RecvInfo, SendInfo};
+
+use crate::{Error, Group, Result, utils::random_conn_id, validation::AddressValidator};
 
 /// Handshake result, returns by [`handshake`](Acceptor::handshake) function.
 pub enum Handshake {
@@ -31,7 +33,7 @@ impl Acceptor {
     /// Process quic handshake
     pub fn handshake(
         &mut self,
-        header: Header<'_>,
+        header: &Header<'_>,
         buf: &mut [u8],
         read_size: usize,
         recv_info: RecvInfo,
@@ -104,7 +106,7 @@ impl Acceptor {
 
     fn retry(
         &self,
-        header: Header<'_>,
+        header: &Header<'_>,
         buf: &mut [u8],
         _recv_size: usize,
         recv_info: RecvInfo,
@@ -154,7 +156,7 @@ impl Acceptor {
 
     fn negotiate_version(
         &self,
-        header: Header<'_>,
+        header: &Header<'_>,
         buf: &mut [u8],
         _recv_size: usize,
         recv_info: RecvInfo,
@@ -186,13 +188,6 @@ impl Acceptor {
     }
 }
 
-/// Handshake result, returns by [`handshake`](Acceptor::handshake) function.
-pub enum Accept {
-    Handshake(usize),
-    Accept(Token),
-    Recv(usize),
-}
-
 impl Group {
     /// The server socket uses this function instead of `recv` to handle accepting data.
     pub fn accept_recv(
@@ -201,15 +196,48 @@ impl Group {
         buf: &mut [u8],
         recv_size: usize,
         recv_info: RecvInfo,
-    ) -> Result<Accept> {
+    ) -> Result<(usize, SendInfo)> {
         let header = quiche::Header::from_slice(&mut buf[..recv_size], quiche::MAX_CONN_ID_LEN)
             .map_err(Error::Quiche)?;
 
-        match self.recv_with_(&header.scid, &mut buf[..recv_size], recv_info) {
-            Ok(read_size) => Ok(Accept::Recv(read_size)),
-            Err(Error::NotFound) => match acceptor.handshake(header, buf, recv_size, recv_info) {
-                Ok(Handshake::Accept(conn)) => Ok(Accept::Accept(self.register(conn)?)),
-                Ok(Handshake::Handshake(send_size)) => Ok(Accept::Handshake(send_size)),
+        match self.recv_with_(&header.dcid, &mut buf[..recv_size], recv_info, true) {
+            Ok((token, _)) => match self.send(token, buf) {
+                Err(Error::Busy) | Err(Error::Retry) => Ok((
+                    0,
+                    SendInfo {
+                        at: Instant::now(),
+                        from: recv_info.to,
+                        to: recv_info.from,
+                    },
+                )),
+                r => r,
+            },
+            Err(Error::NotFound) => match acceptor.handshake(&header, buf, recv_size, recv_info) {
+                Ok(Handshake::Accept(conn)) => {
+                    let token = self.register(conn)?;
+
+                    self.recv_with_(&header.dcid, &mut buf[..recv_size], recv_info, true)?;
+
+                    match self.send(token, buf) {
+                        Err(Error::Busy) | Err(Error::Retry) => Ok((
+                            0,
+                            SendInfo {
+                                at: Instant::now(),
+                                from: recv_info.to,
+                                to: recv_info.from,
+                            },
+                        )),
+                        r => r,
+                    }
+                }
+                Ok(Handshake::Handshake(send_size)) => Ok((
+                    send_size,
+                    SendInfo {
+                        at: Instant::now(),
+                        from: recv_info.to,
+                        to: recv_info.from,
+                    },
+                )),
                 Err(err) => Err(err),
             },
             Err(err) => Err(err),

@@ -7,10 +7,10 @@ use std::{
 
 use quiche::{Connection, Shutdown};
 
-use crate::{Error, Event, EventKind, Readiness, Result, Token, utils::release_time};
+use crate::{Error, Event, EventKind, Readiness, Result, Token, utils::delay_send};
 
 /// `ConnState` resource acquire kind.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub enum LocKind {
     None,
     Send,
@@ -40,6 +40,8 @@ impl LocKind {
 pub struct ConnState {
     /// Connection id.
     id: Token,
+    /// previous value of is_established.
+    is_established: bool,
     /// Wrapped `quiche::Connection`
     conn: UnsafeCell<quiche::Connection>,
     /// Current lock type.
@@ -78,6 +80,7 @@ impl ConnState {
     pub fn new(id: Token, conn: quiche::Connection) -> Self {
         Self {
             id,
+            is_established: conn.is_established(),
             local_bidi_stream_id_next: if conn.is_server() { 5 } else { 4 },
             conn: UnsafeCell::new(conn),
             locked: LocKind::None,
@@ -94,7 +97,7 @@ impl ConnState {
     ) -> Self {
         let mut state = Self::new(id, conn);
 
-        state.raise_events(release_timer_threshold, readiness);
+        state.raise_events(LocKind::None, release_timer_threshold, readiness);
 
         state
     }
@@ -146,17 +149,51 @@ impl ConnState {
         assert_ne!(self.locked, LocKind::None, "Unlock a released stat.");
         assert_eq!(self.lock_count, lock_count, "`lock_count` is mismatched.");
 
+        let locked = self.locked;
+
         self.locked = LocKind::None;
         // step `lock_count`
         self.lock_count += 1;
 
-        self.raise_events(release_timer_threshold, readiness);
+        self.raise_events(locked, release_timer_threshold, readiness);
     }
 
-    fn raise_events(&mut self, release_timer_threshold: Duration, readiness: &mut Readiness) {
+    fn raise_events(
+        &mut self,
+        unlock: LocKind,
+        release_timer_threshold: Duration,
+        readiness: &mut Readiness,
+    ) {
         // Safety:
         // - only one thread can access this code at the same time.
         let conn = unsafe { self.as_mut() };
+
+        if !self.is_established && conn.is_established() {
+            self.is_established = true;
+            if conn.is_server() {
+                readiness.insert(
+                    Event {
+                        kind: EventKind::Accept,
+                        is_server: true,
+                        is_error: false,
+                        token: self.id,
+                        stream_id: 0,
+                    },
+                    None,
+                );
+            } else {
+                readiness.insert(
+                    Event {
+                        kind: EventKind::Connected,
+                        is_server: false,
+                        is_error: false,
+                        token: self.id,
+                        stream_id: 0,
+                    },
+                    None,
+                );
+            }
+        }
 
         if conn.is_closed() {
             readiness.insert(
@@ -345,7 +382,11 @@ impl ConnState {
         let now = Instant::now();
 
         // check if the connection has data to send.
-        let delay_to = release_time(conn, now, release_timer_threshold);
+        let delay_to = delay_send(conn, now, release_timer_threshold);
+
+        if unlock == LocKind::Send && delay_to.is_none() {
+            return;
+        }
 
         readiness.insert(
             Event {

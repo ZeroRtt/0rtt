@@ -65,6 +65,10 @@ pub struct Group {
 }
 
 impl Group {
+    /// Create a new `Group` instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// Wrap and register a `quiche::Connection`.
     pub fn register(&self, conn: quiche::Connection) -> Result<Token> {
         let mut state = self.registration.lock();
@@ -104,9 +108,7 @@ impl Group {
     pub fn send(&self, token: Token, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
         let mut conn = self.lock_conn(token, LocKind::Send)?;
 
-        let release_time = release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD);
-
-        if let Some(_) = release_time {
+        if release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD).is_some() {
             return Err(Error::Retry);
         }
 
@@ -139,7 +141,8 @@ impl Group {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-        self.recv_with_(&header.dcid, buf, info)
+        self.recv_with_(&header.dcid, buf, info, false)
+            .map(|(_, recv_size)| recv_size)
     }
 
     /// Processes QUIC packets received from the peer.
@@ -148,8 +151,13 @@ impl Group {
         scid: &ConnectionId<'_>,
         buf: &mut [u8],
         info: RecvInfo,
-    ) -> Result<usize> {
+        is_server: bool,
+    ) -> Result<(Token, usize)> {
         let mut conn = self.lock_conn_with(scid, LocKind::Recv)?;
+
+        if is_server && !conn.is_server() {
+            panic!("dispatch packet to non-server connection.");
+        }
 
         match conn.recv(buf, info) {
             Ok(recv_size) => {
@@ -159,7 +167,7 @@ impl Group {
                     recv_size
                 );
 
-                Ok(recv_size)
+                Ok((conn.token, recv_size))
             }
             Err(err) => {
                 log::error!("Connection recv, scid={:?}, err={}", conn.source_id(), err);
