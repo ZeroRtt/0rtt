@@ -212,3 +212,110 @@ fn test_accept() {
         }
     }
 }
+
+#[test]
+fn test_stream_open() {
+    // pretty_env_logger::init_timed();
+
+    let group = Group::new();
+
+    let mut acceptor = Acceptor::new(
+        mock_config(true),
+        SimpleAddressValidator::new(Duration::from_secs(1)),
+    );
+
+    let mut client_config = mock_config(false);
+
+    let laddr = "127.0.0.1:1".parse().unwrap();
+    let raddr = "127.0.0.1:2".parse().unwrap();
+
+    let client = group
+        .connect(None, laddr, raddr, &mut client_config)
+        .unwrap();
+
+    assert_eq!(
+        group
+            .stream_open(client)
+            .expect_err("stream_open before connected."),
+        Error::Retry
+    );
+
+    let mut buf = vec![0; 1600];
+
+    loop {
+        let mut events = vec![];
+
+        log::trace!("poll events");
+
+        group.poll(&mut events, None).unwrap();
+
+        log::trace!("poll events: {:?}", events);
+
+        for event in events {
+            if event.kind == EventKind::Connected {
+                let stream_id = group.stream_open(client).unwrap();
+
+                group
+                    .stream_send(client, stream_id, b"hello", true)
+                    .unwrap();
+            }
+
+            if event.kind == EventKind::StreamRecv {
+                let mut buf = vec![0; 1300];
+                let (read_size, fin) = group
+                    .stream_recv(event.token, event.stream_id, &mut buf)
+                    .unwrap();
+
+                assert_eq!(&buf[..read_size], b"hello");
+                assert!(fin);
+                return;
+            }
+
+            if event.kind == EventKind::Send {
+                let (send_size, send_info) = match group.send(event.token, &mut buf) {
+                    Ok(r) => r,
+                    Err(Error::Retry) => {
+                        continue;
+                    }
+                    Err(err) => panic!("{}", err),
+                };
+
+                if event.token == client {
+                    let (send_size, send_info) = group
+                        .accept_recv(
+                            &mut acceptor,
+                            &mut buf,
+                            send_size,
+                            RecvInfo {
+                                from: send_info.from,
+                                to: send_info.to,
+                            },
+                        )
+                        .unwrap();
+
+                    if send_size > 0 {
+                        group
+                            .recv(
+                                &mut buf[..send_size],
+                                RecvInfo {
+                                    from: send_info.from,
+                                    to: send_info.to,
+                                },
+                            )
+                            .unwrap();
+                    }
+                } else {
+                    group
+                        .recv(
+                            &mut buf[..send_size],
+                            RecvInfo {
+                                from: send_info.from,
+                                to: send_info.to,
+                            },
+                        )
+                        .unwrap();
+                }
+            }
+        }
+    }
+}

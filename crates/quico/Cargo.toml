@@ -28,3 +28,7 @@ client = []
 [[bench]]
 name = "readiness"
 harness = false
+
+[[bench]]
+name = "group"
+harness = false
