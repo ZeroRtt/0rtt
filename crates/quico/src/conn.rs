@@ -182,6 +182,12 @@ impl ConnState {
 
             self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
 
+            log::trace!(
+                "stream open, scid={:?}, stream_id={}",
+                conn.trace_id(),
+                stream_id
+            );
+
             return Ok(stream_id);
         }
 
@@ -190,6 +196,8 @@ impl ConnState {
                 .expect_err("insert `LocKind::StreamOpen` into retry_lock_requests"),
             Error::Busy
         );
+
+        log::trace!("stream open, scid={:?}, pending", conn.trace_id());
 
         self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
 
