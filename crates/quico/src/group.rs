@@ -19,6 +19,7 @@ struct ConnGuard<'a> {
     token: Token,
     conn_state_guard: crate::conn::ConnGuard,
     group: &'a Group,
+    send_done: bool,
 }
 
 impl<'a> Drop for ConnGuard<'a> {
@@ -29,6 +30,7 @@ impl<'a> Drop for ConnGuard<'a> {
             assert!(
                 registration
                     .unlock_conn(
+                        self.send_done,
                         DEFAULT_RELEASE_TIMER_THRESHOLD,
                         self.token,
                         self.conn_state_guard.lock_count,
@@ -89,6 +91,7 @@ impl Group {
             token,
             conn_state_guard: state.try_lock_conn(token, kind)?,
             group: self,
+            send_done: false,
         })
     }
 
@@ -101,6 +104,7 @@ impl Group {
             token,
             conn_state_guard,
             group: self,
+            send_done: false,
         })
     }
 
@@ -127,6 +131,7 @@ impl Group {
             }
             Err(quiche::Error::Done) => {
                 log::trace!("connection send, scid={:?}, done", conn.trace_id());
+                conn.send_done = true;
                 return Err(Error::Retry);
             }
             Err(err) => {

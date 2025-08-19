@@ -122,6 +122,7 @@ impl Registration {
     #[inline(always)]
     pub unsafe fn unlock_conn(
         &mut self,
+        send_done: bool,
         release_timer_threshold: Duration,
         token: Token,
         lock_count: u64,
@@ -129,7 +130,7 @@ impl Registration {
         let readiness = unsafe { self.readiness() };
 
         if let Some(state) = self.conn_stats.get_mut(&token) {
-            state.unlock(lock_count, release_timer_threshold, readiness);
+            state.unlock(send_done, lock_count, release_timer_threshold, readiness);
             return Ok(());
         }
 

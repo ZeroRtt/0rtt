@@ -97,7 +97,7 @@ impl ConnState {
     ) -> Self {
         let mut state = Self::new(id, conn);
 
-        state.raise_events(LocKind::None, release_timer_threshold, readiness);
+        state.raise_events(false, release_timer_threshold, readiness);
 
         state
     }
@@ -142,6 +142,7 @@ impl ConnState {
     /// - This function is protected by an upper-level spin-lock.
     pub fn unlock(
         &mut self,
+        send_done: bool,
         lock_count: u64,
         release_timer_threshold: Duration,
         readiness: &mut Readiness,
@@ -149,18 +150,55 @@ impl ConnState {
         assert_ne!(self.locked, LocKind::None, "Unlock a released stat.");
         assert_eq!(self.lock_count, lock_count, "`lock_count` is mismatched.");
 
-        let locked = self.locked;
+        if send_done {
+            assert_eq!(self.locked, LocKind::Send);
+        }
 
         self.locked = LocKind::None;
         // step `lock_count`
         self.lock_count += 1;
 
-        self.raise_events(locked, release_timer_threshold, readiness);
+        self.raise_events(send_done, release_timer_threshold, readiness);
+    }
+
+    // Try open a new bidi-outbound-stream.
+    pub fn stream_open(
+        &mut self,
+        release_timer_threshold: Duration,
+        readiness: &mut Readiness,
+    ) -> Result<u64> {
+        // check if this thread own the state.
+        let guard = self.try_lock(LocKind::StreamOpen)?;
+
+        // Safety: only one thread can access this code at the same time.
+        let conn = unsafe { self.as_mut() };
+
+        if conn.peer_streams_left_bidi() > 0 {
+            let stream_id = self.local_bidi_stream_id_next;
+            self.local_bidi_stream_id_next += 4;
+
+            // this a trick, func `stream_priority` will created the target if did not exist.
+            conn.stream_priority(stream_id, 255, true)?;
+
+            self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
+
+            return Ok(stream_id);
+        }
+
+        assert_eq!(
+            self.try_lock(LocKind::StreamOpen)
+                .expect_err("insert `LocKind::StreamOpen` into retry_lock_requests"),
+            Error::Busy
+        );
+
+        self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
+
+        Err(Error::Retry)
     }
 
     fn raise_events(
         &mut self,
-        unlock: LocKind,
+        send_done: bool,
         release_timer_threshold: Duration,
         readiness: &mut Readiness,
     ) {
@@ -384,7 +422,7 @@ impl ConnState {
         // check if the connection has data to send.
         let delay_to = delay_send(conn, now, release_timer_threshold);
 
-        if unlock == LocKind::Send && delay_to.is_none() {
+        if send_done && delay_to.is_none() {
             return;
         }
 
@@ -398,41 +436,6 @@ impl ConnState {
             },
             delay_to,
         );
-    }
-
-    // Try open a new bidi-outbound-stream.
-    pub fn stream_open(
-        &mut self,
-        release_timer_threshold: Duration,
-        readiness: &mut Readiness,
-    ) -> Result<u64> {
-        // check if this thread own the state.
-        let guard = self.try_lock(LocKind::StreamOpen)?;
-
-        // Safety: only one thread can access this code at the same time.
-        let conn = unsafe { self.as_mut() };
-
-        if conn.peer_streams_left_bidi() > 0 {
-            let stream_id = self.local_bidi_stream_id_next;
-            self.local_bidi_stream_id_next += 4;
-
-            // this a trick, func `stream_priority` will created the target if did not exist.
-            conn.stream_priority(stream_id, 255, true)?;
-
-            self.unlock(guard.lock_count, release_timer_threshold, readiness);
-
-            return Ok(stream_id);
-        }
-
-        assert_eq!(
-            self.try_lock(LocKind::StreamOpen)
-                .expect_err("insert `LocKind::StreamOpen` into retry_lock_requests"),
-            Error::Busy
-        );
-
-        self.unlock(guard.lock_count, release_timer_threshold, readiness);
-
-        Err(Error::Retry)
     }
 
     /// Careful use this function.
@@ -484,7 +487,12 @@ mod tests {
 
         let mut readiness = Readiness::default();
 
-        state.unlock(guard.lock_count, Duration::from_micros(250), &mut readiness);
+        state.unlock(
+            false,
+            guard.lock_count,
+            Duration::from_micros(250),
+            &mut readiness,
+        );
 
         let guard = state.try_lock(LocKind::Recv).expect("LocKind::Recv");
         assert_eq!(guard.lock_count, 1, "step `lock_count`");
