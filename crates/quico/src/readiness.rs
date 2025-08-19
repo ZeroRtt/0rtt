@@ -57,10 +57,17 @@ impl Readiness {
     pub fn insert(&mut self, event: Event, delay_to: Option<Instant>) {
         log::trace!("readiness, event={:?}, delay={:?}", event, delay_to);
         if let Some(delay_to) = delay_to {
+            self.events.remove(&event);
             self.delayed.push(event, Reverse(delay_to));
         } else {
+            self.delayed.remove(&event);
             self.events.insert(event);
         }
+    }
+
+    pub fn remove(&mut self, event: Event) {
+        self.events.remove(&event);
+        self.delayed.remove(&event);
     }
 
     /// Poll readiness events.

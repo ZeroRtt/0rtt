@@ -653,6 +653,7 @@ name = "o3"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "log",
  "mio",
  "quico",
  "ringbuff",

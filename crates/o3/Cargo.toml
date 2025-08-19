@@ -12,9 +12,10 @@ mio = { version = "^1", features = ["net", "os-poll"] }
 clap = { version = "=4.5.41", features = ["derive"], optional = true }
 quico = { version = "^0.1", path = "../quico" }
 ringbuff = { version = "^0.1", path = "../ringbuff" }
+log = { version = "^0.4" }
 
 [features]
-default = ["o3", "agent", "cli"]
-o3 = []
+default = ["redirect", "agent", "cli"]
+redirect = []
 agent = []
 cli = ["clap"]

@@ -431,6 +431,14 @@ impl ConnState {
         let delay_to = delay_send(conn, now, release_timer_threshold);
 
         if send_done && delay_to.is_none() {
+            readiness.remove(Event {
+                kind: EventKind::Send,
+                is_server: conn.is_server(),
+                is_error: false,
+                token: self.id,
+                stream_id: 0,
+            });
+
             return;
         }
 
@@ -448,7 +456,7 @@ impl ConnState {
 
     /// Careful use this function.
     #[inline]
-    unsafe fn as_mut(&self) -> &'static mut Connection {
+    pub unsafe fn as_mut(&self) -> &'static mut Connection {
         unsafe { self.conn.get().as_mut().unwrap() }
     }
 }

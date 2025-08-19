@@ -1,11 +1,11 @@
-//! `o3` is a fast `quic/http3` reverse proxy implementation.
+//! `redirect` is a fast `quic/http3` reverse proxy implementation.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod pipe;
 
-#[cfg(feature = "o3")]
-#[cfg_attr(docsrs, doc(cfg(feature = "o3")))]
-pub mod o3;
+#[cfg(feature = "redirect")]
+#[cfg_attr(docsrs, doc(cfg(feature = "redirect")))]
+pub mod redirect;
 
 #[cfg(feature = "agent")]
 #[cfg_attr(docsrs, doc(cfg(feature = "agent")))]

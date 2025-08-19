@@ -131,6 +131,11 @@ impl Registration {
 
         if let Some(state) = self.conn_stats.get_mut(&token) {
             state.unlock(send_done, lock_count, release_timer_threshold, readiness);
+
+            // safety:  in spin-lock scope.
+            if unsafe { state.as_mut().is_closed() } {
+                _ = self.deregister(token);
+            }
             return Ok(());
         }
 

@@ -45,38 +45,38 @@ fn parse_port_range(arg: &str) -> std::result::Result<Range<u16>, String> {
 #[command(version, about, long_about = None)]
 pub struct Cli {
     /// Set agent proto list.
-    #[arg(long, value_name = "PROTO_LIST", default_values_t = ["o3".to_string()])]
+    #[arg(long, value_name = "PROTO_LIST", default_values_t = ["redirect".to_string()])]
     pub protos: Vec<String>,
 
     #[cfg(feature = "agent")]
-    /// Specify o3 server listening address.
+    /// Specify redirect server listening address.
     #[arg(short = 's', long = "server", value_name = "ADDR")]
-    pub o3_server_ip: IpAddr,
+    pub redirect_server_ip: IpAddr,
 
     #[cfg(feature = "agent")]
-    /// Specify the o3 server listening port range.
+    /// Specify the redirect server listening port range.
     #[arg(short = 'p', long = "server-ports", value_name = "PORT", value_parser=parse_port_range)]
-    pub o3_server_port_range: Range<u16>,
+    pub redirect_server_port_range: Range<u16>,
 
-    #[cfg(feature = "o3")]
-    /// Specify o3 server listening address list.
+    #[cfg(feature = "redirect")]
+    /// Specify redirect server listening address list.
     #[arg(short = 'l', long = "listen", value_name = "ADDR")]
-    pub o3_ip: Option<Vec<IpAddr>>,
+    pub redirect_ip: Option<Vec<IpAddr>>,
 
-    #[cfg(feature = "o3")]
-    /// Specify the o3 server listening port range.
+    #[cfg(feature = "redirect")]
+    /// Specify the redirect server listening port range.
     #[arg(short = 'p', long = "port", value_name = "PORT", value_parser=parse_port_range)]
-    pub o3_port_range: Range<u16>,
+    pub redirect_port_range: Range<u16>,
 
     /// Configure the certificate chain file(PEM).
     #[arg(short, long, value_name = "PEM_FILE")]
     pub cert: Option<PathBuf>,
 
     /// Configure the private chain file(PEM).
-    #[arg(short, long, value_name = "PEM_FILE", default_value = "o3.key")]
+    #[arg(short, long, value_name = "PEM_FILE", default_value = "redirect.key")]
     pub key: PathBuf,
 
-    #[cfg(feature = "o3")]
+    #[cfg(feature = "redirect")]
     /// Specifies a file where trusted CA certificates are stored for the purposes of peer's certificate verification.
     #[arg(short, long, value_name = "PEM_FILE")]
     verify_peer: Option<PathBuf>,
@@ -130,19 +130,19 @@ pub struct Cli {
 
 impl Cli {
     #[cfg(feature = "agent")]
-    pub fn parse_o3_server_addrs(&self) -> Result<Vec<SocketAddr>> {
+    pub fn parse_redirect_server_addrs(&self) -> Result<Vec<SocketAddr>> {
         let mut laddrs: Vec<SocketAddr> = vec![];
 
-        for port in self.o3_server_port_range.clone() {
-            laddrs.push(SocketAddr::new(self.o3_server_ip, port));
+        for port in self.redirect_server_port_range.clone() {
+            laddrs.push(SocketAddr::new(self.redirect_server_ip, port));
         }
 
         Ok(laddrs)
     }
 
-    #[cfg(feature = "o3")]
-    pub fn parse_o3_listen_addrs(&self) -> Result<Vec<SocketAddr>> {
-        let ips = if let Some(interfaces) = self.o3_ip.clone() {
+    #[cfg(feature = "redirect")]
+    pub fn parse_redirect_listen_addrs(&self) -> Result<Vec<SocketAddr>> {
+        let ips = if let Some(interfaces) = self.redirect_ip.clone() {
             interfaces
         } else {
             use std::net::Ipv6Addr;
@@ -151,7 +151,7 @@ impl Cli {
         };
         let mut laddrs: Vec<SocketAddr> = vec![];
 
-        for port in self.o3_port_range.clone() {
+        for port in self.redirect_port_range.clone() {
             for ip in &ips {
                 laddrs.push(SocketAddr::new(*ip, port));
             }
@@ -202,7 +202,7 @@ impl Cli {
                 )
             })?;
 
-        #[cfg(feature = "o3")]
+        #[cfg(feature = "redirect")]
         if let Some(ca) = &self.verify_peer {
             config
                 .load_verify_locations_from_file(ca.to_str().unwrap())
@@ -228,7 +228,7 @@ impl Cli {
     }
 }
 
-/// Subcommand for o3 apps.
+/// Subcommand for redirect apps.
 #[derive(Subcommand)]
 pub enum Commands {
     #[cfg(feature = "agent")]
@@ -238,7 +238,7 @@ pub enum Commands {
         on: Option<SocketAddr>,
     },
 
-    #[cfg(feature = "o3")]
+    #[cfg(feature = "redirect")]
     /// Start a agent service.
     Redirect {
         /// Specify the redirect target address
