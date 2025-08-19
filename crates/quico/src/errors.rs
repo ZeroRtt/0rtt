@@ -24,5 +24,19 @@ pub enum Error {
     ValidateAddress,
 }
 
+impl From<Error> for std::io::Error {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::Quiche(error) => std::io::Error::other(error),
+            Error::Retry | Error::Busy => {
+                std::io::Error::new(std::io::ErrorKind::WouldBlock, value)
+            }
+
+            Error::NotFound => std::io::Error::new(std::io::ErrorKind::NotFound, value),
+            Error::ValidateAddress => std::io::Error::other(value),
+        }
+    }
+}
+
 /// Short for `std::result::Result<T, crate::poll::Error>`
 pub type Result<T> = std::result::Result<T, Error>;

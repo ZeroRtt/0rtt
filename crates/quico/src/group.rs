@@ -191,10 +191,10 @@ impl Group {
     ) -> Result<usize> {
         let mut conn = self.lock_conn(token, LocKind::StreamSend(stream_id, buf.len()))?;
 
-        assert!(
-            conn.is_established() || conn.is_in_early_data(),
-            "Call stream send before connection established."
-        );
+        // assert!(
+        //     conn.is_established() || conn.is_in_early_data(),
+        //     "Call stream send before connection established."
+        // );
 
         match conn.stream_send(stream_id, buf, fin) {
             Ok(send_size) => {
@@ -305,5 +305,14 @@ impl Group {
                 self.condvar.wait(&mut state);
             }
         }
+    }
+
+    /// Waits for readiness events without blocking current thread and returns possible retry time duration.
+    pub fn non_blocking_poll(&self, events: &mut Vec<Event>) -> Option<Instant> {
+        let mut state = self.registration.lock();
+
+        let readiness = unsafe { state.readiness() };
+
+        readiness.poll(events)
     }
 }

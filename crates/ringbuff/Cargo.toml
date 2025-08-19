@@ -4,7 +4,7 @@ documentation = "https://docs.rs/ringbuff"
 edition = "2024"
 license = "MIT"
 name = "ringbuff"
-repository = "https://github.com/quic-lab/n3/crates/ringbuff"
+repository = "https://github.com/ZeroRtt/ZeroRtt/crates/ringbuff"
 version = "0.1.5"
 
 [dependencies]
@@ -16,5 +16,5 @@ futures-test = "^0.3"
 pretty_env_logger = "0.5.0"
 
 [features]
-default = ["deflate"]
-deflate = ["dep:flate2"]
+default = ["async"]
+async = []

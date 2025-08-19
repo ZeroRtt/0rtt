@@ -5,8 +5,6 @@
 mod ringbuf;
 pub use ringbuf::*;
 
-#[cfg(feature = "deflate")]
-#[cfg_attr(docsrs, doc(cfg(feature = "deflate")))]
-pub mod deflate;
-
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub mod pipe;

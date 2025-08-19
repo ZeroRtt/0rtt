@@ -33,6 +33,7 @@ impl Debug for RingBuf {
 impl RingBuf {
     /// Create a ringbuf with specify capacity.
     pub fn with_capacity(len: usize) -> Self {
+        assert!(len > 0, "capacity is zero.");
         Self {
             memory_block: vec![0; len],
             read_pos: 0,
@@ -187,6 +188,8 @@ impl std::io::Write for RingBuf {
     }
 }
 
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 impl AsyncRead for RingBuf {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -197,6 +200,8 @@ impl AsyncRead for RingBuf {
     }
 }
 
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 impl AsyncBufRead for RingBuf {
     fn poll_fill_buf(
         self: std::pin::Pin<&mut Self>,
@@ -212,6 +217,8 @@ impl AsyncBufRead for RingBuf {
     }
 }
 
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 impl AsyncWrite for RingBuf {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,

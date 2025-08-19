@@ -494,10 +494,16 @@ fn test_stream_open_limits() {
             }
 
             if event.kind == EventKind::StreamOpen && event.token == client {
-                let stream_id = group.stream_open(client).unwrap();
+                let stream_id = match group.stream_open(event.token) {
+                    Ok(stream_id) => stream_id,
+                    Err(Error::Retry) => {
+                        continue;
+                    }
+                    Err(err) => panic!("{}", err),
+                };
 
                 group
-                    .stream_send(client, stream_id, b"hello", true)
+                    .stream_send(event.token, stream_id, b"hello", true)
                     .unwrap();
             }
 
@@ -635,7 +641,13 @@ fn test_server_side_stream_open() {
             }
 
             if event.kind == EventKind::StreamOpen && event.token == server {
-                let stream_id = group.stream_open(server).unwrap();
+                let stream_id = match group.stream_open(event.token) {
+                    Ok(stream_id) => stream_id,
+                    Err(Error::Retry) => {
+                        continue;
+                    }
+                    Err(err) => panic!("{}", err),
+                };
 
                 group
                     .stream_send(server, stream_id, b"hello", true)

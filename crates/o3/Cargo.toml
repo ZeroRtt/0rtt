@@ -1,0 +1,20 @@
+[package]
+description = "A `quic/http3` reverse proxy created by `quico`."
+documentation = "https://docs.rs/o3"
+edition = "2024"
+license = "MIT"
+name = "o3"
+repository = "https://github.com/ZeroRtt/ZeroRtt/crates/ringbuff"
+version = "0.1.0"
+
+[dependencies]
+mio = { version = "^1", features = ["net", "os-poll"] }
+clap = { version = "=4.5.41", features = ["derive"], optional = true }
+quico = { version = "^0.1", path = "../quico" }
+ringbuff = { version = "^0.1", path = "../ringbuff" }
+
+[features]
+default = ["o3", "agent", "cli"]
+o3 = []
+agent = []
+cli = ["clap"]

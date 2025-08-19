@@ -25,3 +25,5 @@ pub mod client;
 
 mod group;
 pub use group::*;
+
+pub use quiche;
