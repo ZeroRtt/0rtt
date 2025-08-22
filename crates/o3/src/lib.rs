@@ -1,7 +1,8 @@
 //! `redirect` is a fast `quic/http3` reverse proxy implementation.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-mod pipe;
+mod pipeline;
+mod tcp_quic;
 
 #[cfg(feature = "redirect")]
 #[cfg_attr(docsrs, doc(cfg(feature = "redirect")))]

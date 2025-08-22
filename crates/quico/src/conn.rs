@@ -305,7 +305,6 @@ impl ConnState {
                                     Event {
                                         kind: EventKind::StreamSend,
                                         is_server: conn.is_server(),
-
                                         is_error: false,
                                         token: self.id,
                                         stream_id,
