@@ -1,8 +1,273 @@
-use crate::switch::Switch;
+use std::{
+    collections::{HashSet, VecDeque},
+    io::{Error, ErrorKind, Result},
+    net::SocketAddr,
+    rc::Rc,
+    task::Poll,
+    time::Instant,
+};
+
+use mio::{
+    Events, Interest,
+    net::{TcpListener, TcpStream, UdpSocket},
+};
+use quico::quiche::{self, RecvInfo};
+use rand::seq::SliceRandom;
+
+use crate::{
+    io::{BufferedDatagram, QuicBuf, WouldBlock},
+    switch::{QuicStreamPort, Switch, TcpStreamPort},
+};
+
+static _TCP_LISTENER_TOKEN: mio::Token = mio::Token(0);
+static _UDP_SOCKET_TOKEN: mio::Token = mio::Token(1);
+static _QUIC_PACKET_LEN: usize = 1390;
 
 #[allow(unused)]
 /// Forward agent, passes tcp traffic through quic tunnel.
 pub struct Agent {
+    /// Locally mio token generator.
+    mio_token_next: usize,
+    /// poll for mio sockets.
+    mio_poll: mio::Poll,
+    /// thread-local quic `I/O` group.
+    quic_group: Rc<quico::Group>,
+    /// non-blocking tcp server socket.
+    tcp_listener: TcpListener,
+    /// non-blocking udp socket. which assumes the max `QUIC` packet length is `1392`
+    udp_socket: BufferedDatagram<QuicBuf<_QUIC_PACKET_LEN>>,
+    /// pending inbound tcp stream.
+    pairing_tcp_streams: VecDeque<TcpStream>,
+    /// active quic connections.
+    quic_conns: HashSet<quico::Token>,
+    /// o3 server address list.
+    o3_server_addrs: Vec<SocketAddr>,
+    /// shared quic config.
+    quic_config: quiche::Config,
     /// In-memory/local-thread data switch.
     switch: Switch,
+}
+
+impl Agent {
+    /// Create a new agent instance.
+    pub fn new(
+        laddr: SocketAddr,
+        o3_server_addrs: Vec<SocketAddr>,
+        quic_config: quiche::Config,
+    ) -> Result<Self> {
+        let mio_poll = mio::Poll::new()?;
+
+        let mut tcp_listener = TcpListener::bind(laddr)?;
+
+        mio_poll
+            .registry()
+            .register(&mut tcp_listener, _TCP_LISTENER_TOKEN, Interest::READABLE)?;
+
+        let mut udp_socket = UdpSocket::bind("[::]:0".parse().unwrap())?;
+
+        mio_poll.registry().register(
+            &mut udp_socket,
+            _UDP_SOCKET_TOKEN,
+            Interest::READABLE | Interest::WRITABLE,
+        )?;
+
+        let quic_group = quico::Group::new();
+
+        Ok(Self {
+            o3_server_addrs,
+            mio_token_next: 2,
+            mio_poll,
+            quic_group: Rc::new(quic_group),
+            tcp_listener,
+            udp_socket: BufferedDatagram::new(udp_socket, 1024),
+            pairing_tcp_streams: Default::default(),
+            quic_conns: Default::default(),
+            quic_config,
+            switch: Switch::default(),
+        })
+    }
+
+    /// Run agent.
+    pub fn run(mut self) -> Result<()> {
+        loop {
+            self.run_once()?;
+        }
+    }
+
+    fn run_once(&mut self) -> Result<()> {
+        self.run_mio_poll_once(None)?;
+        Ok(())
+    }
+
+    fn run_mio_poll_once(&mut self, next_release_instant: Option<Instant>) -> Result<()> {
+        let timeout = if let Some(next_release_instant) = next_release_instant {
+            next_release_instant.checked_duration_since(Instant::now())
+        } else {
+            None
+        };
+
+        let mut events = Events::with_capacity(1024);
+
+        self.mio_poll.poll(&mut events, timeout)?;
+
+        for event in events.iter() {
+            let token = event.token();
+
+            // indicates new inbound tcp stream.
+            if token == _TCP_LISTENER_TOKEN {
+                self.tcp_accept()?;
+            } else if token == _UDP_SOCKET_TOKEN {
+                if event.is_writable() {
+                    self.udp_socket_send()?;
+                }
+
+                if event.is_readable() {
+                    self.udp_socket_recv()?;
+                }
+            } else {
+                // for tcp stream.
+                if event.is_writable() {
+                    _ = self.switch.send(token).would_block()?;
+                }
+
+                if event.is_readable() {
+                    _ = self.switch.recv(token).would_block()?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn udp_socket_recv(&mut self) -> Result<()> {
+        let mut buf = QuicBuf::<_QUIC_PACKET_LEN>::new();
+
+        let Poll::Ready((read_size, from)) = self
+            .udp_socket
+            .recv_from(buf.writable_buf())
+            .would_block()?
+        else {
+            return Ok(());
+        };
+
+        buf.written_bytes(read_size);
+
+        match self.quic_group.recv(
+            buf.as_mut(),
+            RecvInfo {
+                from,
+                to: self.udp_socket.local_addr(),
+            },
+        ) {
+            Ok(_) => {}
+            Err(quico::Error::Busy) | Err(quico::Error::Retry) => {
+                unreachable!("single thread mod.");
+            }
+            Err(err) => {
+                log::error!("quic recv, err={}", err)
+            }
+        }
+
+        Ok(())
+    }
+
+    fn udp_socket_send(&mut self) -> Result<()> {
+        _ = self.udp_socket.flush().would_block()?;
+
+        Ok(())
+    }
+
+    fn tcp_accept(&mut self) -> Result<()> {
+        let Poll::Ready((mut stream, raddr)) = self.tcp_listener.accept().would_block()? else {
+            return Ok(());
+        };
+
+        log::trace!("inbound tcp stream, from={}", raddr);
+
+        let Poll::Ready((conn_id, stream_id)) = self.connect_to_server().would_block()? else {
+            log::trace!("pipeline creation suspended , from={}", raddr);
+            self.pairing_tcp_streams.push_back(stream);
+            return Ok(());
+        };
+
+        let tcp_stream_token = self.next_mio_token();
+
+        self.mio_poll.registry().register(
+            &mut stream,
+            tcp_stream_token,
+            Interest::READABLE | Interest::WRITABLE,
+        )?;
+
+        self.switch
+            .register(TcpStreamPort::new(tcp_stream_token, stream)?, 1024 * 1024)?;
+
+        self.switch.register(
+            QuicStreamPort::new(self.quic_group.clone(), conn_id, stream_id),
+            1024 * 1024,
+        )?;
+
+        self.switch.add_rule(tcp_stream_token, (conn_id, stream_id));
+
+        Ok(())
+    }
+
+    fn connect_to_server(&mut self) -> Result<(quico::Token, u64)> {
+        let mut quic_conns = self.quic_conns.iter().copied().collect::<Vec<_>>();
+
+        quic_conns.shuffle(&mut rand::rng());
+
+        let mut busy = false;
+
+        for conn_id in quic_conns {
+            match self.quic_group.stream_open(conn_id) {
+                Ok(stream_id) => return Ok((conn_id, stream_id)),
+                Err(quico::Error::Retry) => {}
+                Err(quico::Error::Busy) => busy = true,
+                Err(err) => {
+                    log::error!("quic stream open, on={:?}, err={}", conn_id, err);
+                    self.quic_conns.remove(&conn_id);
+                }
+            }
+        }
+
+        if busy {
+            return Err(Error::new(ErrorKind::WouldBlock, "connection is busy."));
+        }
+
+        self.o3_server_addrs.shuffle(&mut rand::rng());
+
+        let conn_id = self.quic_group.connect(
+            None,
+            self.udp_socket.local_addr(),
+            self.o3_server_addrs[0],
+            &mut self.quic_config,
+        )?;
+
+        self.quic_conns.insert(conn_id);
+
+        return Err(Error::new(
+            ErrorKind::WouldBlock,
+            "Create a new quic connection.",
+        ));
+    }
+
+    fn next_mio_token(&mut self) -> mio::Token {
+        loop {
+            let token = mio::Token(self.mio_token_next);
+
+            let overflowing;
+
+            (self.mio_token_next, overflowing) = self.mio_token_next.overflowing_add(1);
+
+            if overflowing {
+                self.mio_token_next = 2;
+            }
+
+            if self.switch.contains_port(token) {
+                continue;
+            }
+
+            return token;
+        }
+    }
 }

@@ -163,6 +163,20 @@ pub enum SwitchError {
     Sink(Token),
 }
 
+impl From<SwitchError> for std::io::Error {
+    fn from(value: SwitchError) -> Self {
+        match value {
+            SwitchError::Io(error) => error,
+            SwitchError::Quiche(error) => Self::other(error),
+            SwitchError::BrokenPipe(_) => Self::new(ErrorKind::BrokenPipe, value),
+            SwitchError::WouldBlock(_) => Self::new(ErrorKind::WouldBlock, value),
+            SwitchError::Port(_) => Self::new(ErrorKind::NotFound, value),
+            SwitchError::Source(_) => Self::new(ErrorKind::NotFound, value),
+            SwitchError::Sink(_) => Self::new(ErrorKind::NotFound, value),
+        }
+    }
+}
+
 /// A port provides non-blocking I/O operations.
 pub trait Port {
     /// Returns debug information.
@@ -202,6 +216,13 @@ impl Switch {
 }
 
 impl Switch {
+    /// Returns true if the switch contains a `Port` for the specified token.
+    pub fn contains_port<T>(&self, token: T) -> bool
+    where
+        Token: From<T>,
+    {
+        self.ports.contains_key(&token.into())
+    }
     /// Register a new port with reading buffer size.
     pub fn register<P>(&mut self, port: P, buffer_size: usize) -> Result<(), SwitchError>
     where
@@ -242,6 +263,29 @@ impl Switch {
         }
 
         Ok(port.into_inner().port)
+    }
+
+    pub fn add_rule<F, T>(&mut self, from: F, to: T)
+    where
+        Token: From<F> + From<T>,
+    {
+        let from = from.into();
+        let to = to.into();
+
+        assert!(
+            self.ports.contains_key(&from),
+            "add_rule: from is not exists."
+        );
+
+        assert!(self.ports.contains_key(&to), "add_rule: to is not exists.");
+
+        if let Some(token) = self.sources.insert(to, from) {
+            self.sinks.remove(&token);
+        }
+
+        if let Some(token) = self.sinks.insert(from, to) {
+            self.sources.remove(&token);
+        }
     }
 
     /// Send data over port.
