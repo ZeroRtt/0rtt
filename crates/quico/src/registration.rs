@@ -116,6 +116,22 @@ impl Registration {
         }
     }
 
+    /// Close a stream.
+    pub fn stream_close(
+        &mut self,
+        token: Token,
+        stream_id: u64,
+        release_timer_threshold: Duration,
+    ) -> Result<()> {
+        let readiness = unsafe { self.readiness() };
+
+        if let Some(state) = self.conn_stats.get_mut(&token) {
+            state.stream_shutdown(stream_id, release_timer_threshold, readiness)
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+
     /// Unlock connection.
     ///
     /// Carefully: use this function within the scope of spin-lock protection.

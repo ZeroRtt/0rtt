@@ -278,6 +278,13 @@ impl Group {
             .stream_open(token, DEFAULT_RELEASE_TIMER_THRESHOLD)
     }
 
+    /// Close a stream.
+    pub fn stream_close(&self, token: Token, stream_id: u64) -> Result<()> {
+        self.registration
+            .lock()
+            .stream_close(token, stream_id, DEFAULT_RELEASE_TIMER_THRESHOLD)
+    }
+
     /// Wait for readiness events
     pub fn poll(&self, events: &mut Vec<Event>, timeout: Option<Duration>) -> Result<()> {
         let timeout = timeout.map(|timeout| Instant::now() + timeout);

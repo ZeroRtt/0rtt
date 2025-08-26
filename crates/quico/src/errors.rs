@@ -16,7 +16,7 @@ pub enum Error {
     #[error("Resource is busy.")]
     Busy,
 
-    /// Resource  is not found.
+    /// Resource is not found.
     #[error("Resource is not found.")]
     NotFound,
 

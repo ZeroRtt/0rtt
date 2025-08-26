@@ -161,6 +161,48 @@ impl ConnState {
         self.raise_events(send_done, release_timer_threshold, readiness);
     }
 
+    pub fn stream_shutdown(
+        &mut self,
+        stream_id: u64,
+        release_timer_threshold: Duration,
+        readiness: &mut Readiness,
+    ) -> Result<()> {
+        // check if this thread own the state.
+        let Ok(guard) = self.try_lock(LocKind::StreamShutdown {
+            shutdown_read: true,
+            shutdown_write: true,
+            stream_id,
+            err: 0x0,
+        }) else {
+            return Ok(());
+        };
+
+        // Safety: only one thread can access this code at the same time.
+        let conn = unsafe { self.as_mut() };
+
+        if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Write, 0x0) {
+            log::error!(
+                "shutdown write, scid={:?}, stream_id={}, err={}",
+                conn.source_id(),
+                stream_id,
+                err
+            );
+        }
+
+        if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, 0x0) {
+            log::error!(
+                "shutdown read, scid={:?}, stream_id={}, err={}",
+                conn.source_id(),
+                stream_id,
+                err
+            );
+        }
+
+        self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
+
+        Ok(())
+    }
+
     // Try open a new bidi-outbound-stream.
     pub fn stream_open(
         &mut self,
