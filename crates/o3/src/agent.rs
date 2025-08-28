@@ -16,7 +16,7 @@ use rand::seq::SliceRandom;
 
 use crate::{
     io::{BufferedDatagram, QuicBuf, WouldBlock},
-    switch::{QuicStreamPort, Switch, TcpStreamPort},
+    switch::{QuicStreamPort, Switch, SwitchError, TcpStreamPort, Token},
 };
 
 static _TCP_LISTENER_TOKEN: mio::Token = mio::Token(0);
@@ -95,13 +95,99 @@ impl Agent {
     }
 
     fn run_once(&mut self) -> Result<()> {
-        self.run_mio_poll_once(None)?;
+        let next_release_time = self.run_quic_poll_once()?;
+        self.run_mio_poll_once(next_release_time)?;
         Ok(())
     }
 
-    fn run_mio_poll_once(&mut self, next_release_instant: Option<Instant>) -> Result<()> {
-        let timeout = if let Some(next_release_instant) = next_release_instant {
-            next_release_instant.checked_duration_since(Instant::now())
+    fn run_quic_poll_once(&mut self) -> Result<Option<Instant>> {
+        let mut events = vec![];
+
+        let next_release_instant = self.quic_group.non_blocking_poll(&mut events);
+
+        for event in events {
+            match event.kind {
+                quico::EventKind::Send => {
+                    self.quic_conn_send(event.token)?;
+                }
+                quico::EventKind::Recv => {
+                    unreachable!("single thread mod.");
+                }
+                quico::EventKind::Connected => {
+                    self.quic_connected(event.token)?;
+                }
+                quico::EventKind::Accept => {
+                    unreachable!("client quic.");
+                }
+                quico::EventKind::Closed => {
+                    self.quic_conn_closed(event.token)?;
+                }
+                quico::EventKind::StreamOpen => {
+                    self.quic_stream_open(event.token, event.stream_id)?;
+                }
+                quico::EventKind::StreamSend => {
+                    self.switch_send((event.token, event.stream_id))?;
+                }
+                quico::EventKind::StreamRecv => {
+                    self.switch_recv((event.token, event.stream_id))?;
+                }
+            }
+        }
+
+        Ok(next_release_instant)
+    }
+
+    fn quic_conn_send(&mut self, token: quico::Token) -> Result<()> {
+        if self.udp_socket.is_full() {
+            log::warn!("udp socket sendbuf is full.");
+            return Ok(());
+        }
+
+        let mut buf = QuicBuf::<_QUIC_PACKET_LEN>::new();
+
+        let Ok((send_size, send_info)) = self.quic_group.send(token, buf.as_mut()) else {
+            return Ok(());
+        };
+
+        buf.written_bytes(send_size);
+
+        _ = self.udp_socket.send_to(buf, send_info.to).would_block()?;
+
+        Ok(())
+    }
+
+    fn quic_connected(&mut self, token: quico::Token) -> Result<()> {
+        self.quic_conns.insert(token);
+
+        while !self.pairing_tcp_streams.is_empty() {
+            let Poll::Ready((conn_id, stream_id)) = self.connect_to_server().would_block()? else {
+                return Ok(());
+            };
+
+            let stream = self.pairing_tcp_streams.pop_front().unwrap();
+
+            self.make_pipeline(conn_id, stream_id, stream)?;
+        }
+
+        Ok(())
+    }
+
+    fn quic_conn_closed(&mut self, token: quico::Token) -> Result<()> {
+        self.quic_conns.remove(&token);
+        Ok(())
+    }
+
+    fn quic_stream_open(&mut self, conn_id: quico::Token, stream_id: u64) -> Result<()> {
+        if let Some(stream) = self.pairing_tcp_streams.pop_front() {
+            self.make_pipeline(conn_id, stream_id, stream)?;
+        }
+
+        Ok(())
+    }
+
+    fn run_mio_poll_once(&mut self, next_release_time: Option<Instant>) -> Result<()> {
+        let timeout = if let Some(next_release_time) = next_release_time {
+            next_release_time.checked_duration_since(Instant::now())
         } else {
             None
         };
@@ -127,11 +213,80 @@ impl Agent {
             } else {
                 // for tcp stream.
                 if event.is_writable() {
-                    _ = self.switch.send(token).would_block()?;
+                    self.switch_send(token)?;
                 }
 
                 if event.is_readable() {
-                    _ = self.switch.recv(token).would_block()?;
+                    self.switch_recv(token)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn switch_send<T>(&mut self, token: T) -> Result<()>
+    where
+        crate::switch::Token: From<T>,
+    {
+        let token: Token = token.into();
+        let Err(err) = self.switch.send(token) else {
+            return Ok(());
+        };
+
+        match err {
+            // pending.
+            SwitchError::Source(_) | SwitchError::WouldBlock(_) | SwitchError::Sink(_) => {
+                return Ok(());
+            }
+            _ => {
+                if let Some(to) = self.switch.remove_rule(token) {
+                    if let Ok(mut port) = self.switch.deregister(to) {
+                        if let Err(err) = port.close() {
+                            log::error!("close port({:?}), err={}", to, err);
+                        }
+                    }
+                }
+
+                if let Ok(mut port) = self.switch.deregister(token) {
+                    if let Err(err) = port.close() {
+                        log::error!("close port({:?}), err={}", token, err);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn switch_recv<T>(&mut self, token: T) -> Result<()>
+    where
+        crate::switch::Token: From<T>,
+    {
+        let token: Token = token.into();
+
+        let Err(err) = self.switch.recv(token) else {
+            return Ok(());
+        };
+
+        match err {
+            // pending.
+            SwitchError::Source(_) | SwitchError::WouldBlock(_) | SwitchError::Sink(_) => {
+                return Ok(());
+            }
+            _ => {
+                if let Some(to) = self.switch.remove_rule(token) {
+                    if let Ok(mut port) = self.switch.deregister(to) {
+                        if let Err(err) = port.close() {
+                            log::error!("close port({:?}), err={}", to, err);
+                        }
+                    }
+                }
+
+                if let Ok(mut port) = self.switch.deregister(token) {
+                    if let Err(err) = port.close() {
+                        log::error!("close port({:?}), err={}", token, err);
+                    }
                 }
             }
         }
@@ -178,7 +333,7 @@ impl Agent {
     }
 
     fn tcp_accept(&mut self) -> Result<()> {
-        let Poll::Ready((mut stream, raddr)) = self.tcp_listener.accept().would_block()? else {
+        let Poll::Ready((stream, raddr)) = self.tcp_listener.accept().would_block()? else {
             return Ok(());
         };
 
@@ -190,6 +345,15 @@ impl Agent {
             return Ok(());
         };
 
+        self.make_pipeline(conn_id, stream_id, stream)
+    }
+
+    fn make_pipeline(
+        &mut self,
+        conn_id: quico::Token,
+        stream_id: u64,
+        mut stream: TcpStream,
+    ) -> Result<()> {
         let tcp_stream_token = self.next_mio_token();
 
         self.mio_poll.registry().register(

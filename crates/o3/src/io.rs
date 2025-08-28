@@ -112,7 +112,7 @@ where
                 self.send_datagrams.push_back((buf, target));
                 Ok(())
             }
-            Err(_) => todo!(),
+            Err(err) => Err(err),
         }
     }
 

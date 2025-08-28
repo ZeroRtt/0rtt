@@ -144,10 +144,6 @@ pub enum SwitchError {
     #[error(transparent)]
     Quiche(#[from] quiche::Error),
 
-    /// Pipeline/channel is broken.
-    #[error("port is shutdown, port={0:?}")]
-    BrokenPipe(Token),
-
     /// The I/O operation is not completed. retry later.
     #[error("I/O Operation on the port({0:?}) would block, retry later.")]
     WouldBlock(Token),
@@ -168,7 +164,6 @@ impl From<SwitchError> for std::io::Error {
         match value {
             SwitchError::Io(error) => error,
             SwitchError::Quiche(error) => Self::other(error),
-            SwitchError::BrokenPipe(_) => Self::new(ErrorKind::BrokenPipe, value),
             SwitchError::WouldBlock(_) => Self::new(ErrorKind::WouldBlock, value),
             SwitchError::Port(_) => Self::new(ErrorKind::NotFound, value),
             SwitchError::Source(_) => Self::new(ErrorKind::NotFound, value),
@@ -219,7 +214,7 @@ impl Switch {
     /// Returns true if the switch contains a `Port` for the specified token.
     pub fn contains_port<T>(&self, token: T) -> bool
     where
-        Token: From<T>,
+        T: Into<Token>,
     {
         self.ports.contains_key(&token.into())
     }
@@ -243,7 +238,7 @@ impl Switch {
     /// Deregister a port from this switch and drop buffered data.
     pub fn deregister<T>(&mut self, token: T) -> Result<Box<dyn Port>, SwitchError>
     where
-        Token: From<T>,
+        T: Into<Token>,
     {
         let token = token.into();
 
@@ -288,10 +283,29 @@ impl Switch {
         }
     }
 
+    pub fn remove_rule<F>(&mut self, from: F) -> Option<Token>
+    where
+        F: Into<Token>,
+    {
+        let from = from.into();
+
+        assert!(
+            self.ports.contains_key(&from),
+            "add_rule: from is not exists."
+        );
+
+        if let Some(token) = self.sinks.remove(&from) {
+            self.sources.remove(&token);
+            Some(token)
+        } else {
+            None
+        }
+    }
+
     /// Send data over port.
     pub fn send<T>(&mut self, token: T) -> Result<usize, SwitchError>
     where
-        Token: From<T>,
+        T: Into<Token>,
     {
         let sink = token.into();
 
@@ -312,7 +326,7 @@ impl Switch {
     /// Recv data from port.
     pub fn recv<T>(&mut self, token: T) -> Result<usize, SwitchError>
     where
-        Token: From<T>,
+        T: Into<Token>,
     {
         let source = token.into();
 
