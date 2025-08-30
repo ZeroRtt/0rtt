@@ -2,12 +2,18 @@
 
 use ringbuff::RingBuf;
 
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    token::Token,
+};
 
 /// A port is an abstraction of non-blocking `I/O` stream.
 pub trait Port {
     /// Returns this port's debug label string.
     fn trace_id(&self) -> &str;
+
+    /// Returns port token.
+    fn token(&self) -> Token;
 
     /// Write data over this port.
     fn write(&mut self, buf: &[u8]) -> Result<usize>;
@@ -32,6 +38,24 @@ impl BufPort {
             port: Box::new(port),
             buf: RingBuf::with_capacity(buf_size),
         }
+    }
+
+    /// Returns this port's debug label string.
+    #[inline]
+    pub fn trace_id(&self) -> &str {
+        self.port.trace_id()
+    }
+
+    /// Returns port token.
+    #[inline]
+    pub fn token(&self) -> Token {
+        self.port.token()
+    }
+
+    /// Close this port.
+    #[inline]
+    pub fn close(&mut self) -> Result<()> {
+        self.port.close()
     }
 
     fn read(&mut self) -> Result<usize> {

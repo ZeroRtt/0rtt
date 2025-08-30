@@ -4,6 +4,7 @@
 pub mod buf;
 pub mod errors;
 pub mod port;
+pub mod router;
 pub mod token;
 
 #[cfg(feature = "cli")]

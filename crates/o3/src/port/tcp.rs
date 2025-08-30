@@ -2,10 +2,11 @@ use std::io::{Read, Write};
 
 use mio::net::TcpStream;
 
-use crate::port::Port;
+use crate::{port::Port, token::Token};
 
 /// Port for `mio::TcpStream`
 pub struct TcpStreamPort {
+    token: Token,
     trace_id: String,
     stream: TcpStream,
 }
@@ -15,6 +16,7 @@ impl TcpStreamPort {
     pub fn new(stream: TcpStream, token: mio::Token) -> Self {
         Self {
             trace_id: format!("TCP({:?})", token),
+            token: Token::Mio(token.0),
             stream,
         }
     }
@@ -23,6 +25,10 @@ impl TcpStreamPort {
 impl Port for TcpStreamPort {
     fn trace_id(&self) -> &str {
         &self.trace_id
+    }
+
+    fn token(&self) -> Token {
+        self.token
     }
 
     fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {

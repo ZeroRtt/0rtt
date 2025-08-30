@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use quico::Group;
 
-use crate::port::Port;
+use crate::{port::Port, token::Token};
 
 /// Port for `QuicStream`
 pub struct QuicStreamPort {
@@ -27,6 +27,10 @@ impl QuicStreamPort {
 impl Port for QuicStreamPort {
     fn trace_id(&self) -> &str {
         &self.trace_id
+    }
+
+    fn token(&self) -> crate::token::Token {
+        Token::QuicStream(self.conn_id.0, self.stream_id)
     }
 
     fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {
