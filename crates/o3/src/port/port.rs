@@ -34,7 +34,7 @@ impl BufPort {
         }
     }
 
-    fn read_to_buffer(&mut self) -> Result<usize> {
+    fn read(&mut self) -> Result<usize> {
         if self.buf.writable() == 0 {
             return Err(Error::Retry);
         }
@@ -63,7 +63,7 @@ impl BufPort {
         let mut send_size = 0;
 
         loop {
-            match other.read_to_buffer() {
+            match other.read() {
                 Err(Error::Retry) => {}
                 Err(err) => return Err(err),
                 _ => {}
