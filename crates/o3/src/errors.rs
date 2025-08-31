@@ -32,6 +32,9 @@ pub enum Error {
 
     #[error("Failed to validate quic client address.")]
     ValidateAddress,
+
+    #[error("Quic socket send queue is full.")]
+    IsFull,
 }
 
 impl From<std::io::Error> for Error {

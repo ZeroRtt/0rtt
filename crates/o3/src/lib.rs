@@ -6,6 +6,11 @@ pub mod errors;
 pub mod port;
 pub mod router;
 pub mod token;
+pub mod would_block;
+
+#[cfg(feature = "agent")]
+#[cfg_attr(docsrs, doc(cfg(feature = "agent")))]
+pub mod agent;
 
 #[cfg(feature = "cli")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cli")))]

@@ -21,6 +21,15 @@ impl Router {
         Self::default()
     }
 
+    /// Returns true if the router contains a `Port` for the specified token.
+    #[inline]
+    pub fn contains_port<T>(&self, token: T) -> bool
+    where
+        T: Into<Token>,
+    {
+        self.ports.contains_key(&token.into())
+    }
+
     /// Register a routing rule.
     pub fn register(&mut self, from: BufPort, to: BufPort) {
         let from_token = from.token();
@@ -45,6 +54,9 @@ impl Router {
 
         self.sinks.insert(from_token, to_token);
         self.sources.insert(to_token, from_token);
+
+        self.sinks.insert(to_token, from_token);
+        self.sources.insert(from_token, to_token);
     }
 
     /// Send data over port.
@@ -60,11 +72,7 @@ impl Router {
             .copied()
             .ok_or_else(|| Error::Source(sink_token))?;
 
-        // Safety: The router guarantees that only one mutable reference to one port will be created at a time
-        let source = unsafe { self.get(&source_token, "Source port.") };
-        let sink = unsafe { self.get(&sink_token, "Sink port.") };
-
-        copy(source, sink)
+        self.transfer(source_token, sink_token)
     }
 
     /// Recv data from port.
@@ -80,11 +88,25 @@ impl Router {
             .copied()
             .ok_or_else(|| Error::Sink(source_token))?;
 
+        self.transfer(source_token, sink_token)
+    }
+
+    fn transfer(&mut self, source_token: Token, sink_token: Token) -> Result<usize> {
         // Safety: The router guarantees that only one mutable reference to one port will be created at a time
         let source = unsafe { self.get(&source_token, "Source port.") };
         let sink = unsafe { self.get(&sink_token, "Sink port.") };
 
-        copy(source, sink)
+        match copy(source, sink) {
+            Ok(transferred) => Ok(transferred),
+            Err(Error::Retry) => Err(Error::Retry),
+            Err(_) => {
+                assert_eq!(self.sources.remove(&sink_token), Some(source_token));
+                assert_eq!(self.sources.remove(&source_token), Some(sink_token));
+                assert_eq!(self.sinks.remove(&source_token), Some(sink_token));
+                assert_eq!(self.sinks.remove(&sink_token), Some(source_token));
+                Ok(0)
+            }
+        }
     }
 
     unsafe fn get(&mut self, token: &Token, msg: &'static str) -> &'static mut BufPort {

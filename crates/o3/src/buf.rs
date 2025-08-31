@@ -1,5 +1,14 @@
 //! Tiny and fixed length buffer for protocol parsing.
 
+use std::{collections::VecDeque, net::SocketAddr, task::Poll};
+
+use mio::net::UdpSocket;
+
+use crate::{
+    errors::{Error, Result},
+    would_block::WouldBlock,
+};
+
 /// Array backed buffer,with compile-time fixed capacity.
 pub struct ArrayBuf<const LEN: usize> {
     /// fixed array buffer.
@@ -52,6 +61,67 @@ impl<const LEN: usize> ArrayBuf<LEN> {
 
 /// Fixed-length buffer for quic protocol.
 pub type QuicBuf = ArrayBuf<1330>;
+
+/// Udp socket with sending fifo.
+pub struct QuicSocket {
+    max_pending_size: usize,
+    sending: VecDeque<(QuicBuf, SocketAddr)>,
+    socket: UdpSocket,
+}
+
+impl QuicSocket {
+    /// Convert [`UdpSocket`] into quic socket(with sending fifo).
+    pub fn new(socket: UdpSocket, max_pending_size: usize) -> Self {
+        Self {
+            max_pending_size,
+            sending: Default::default(),
+            socket,
+        }
+    }
+
+    /// Check if the sending `fifo` is full.
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        !(self.sending.len() < self.max_pending_size)
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        while !self.sending.is_empty() {
+            let (buf, target) = self.sending.front().unwrap();
+
+            self.socket.send_to(buf.as_ref(), *target)?;
+
+            self.sending.pop_front();
+        }
+
+        Ok(())
+    }
+
+    /// Send datagram over this socket.
+    pub fn send_to(&mut self, buf: QuicBuf, target: SocketAddr) -> Result<usize> {
+        _ = self.flush().would_block()?;
+
+        if self.is_full() {
+            return Err(Error::IsFull);
+        }
+
+        let len = buf.len();
+        self.sending.push_back((buf, target));
+
+        _ = self.flush().would_block()?;
+
+        Ok(len)
+    }
+
+    /// Receive data from this socket.
+    pub fn recv_from(&mut self, buf: &mut QuicBuf) -> Result<SocketAddr> {
+        let (read_size, from) = self.socket.recv_from(buf.writable_buf())?;
+
+        buf.truncate(read_size);
+
+        Ok(from)
+    }
+}
 
 #[cfg(test)]
 mod tests {

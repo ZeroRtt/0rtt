@@ -32,19 +32,27 @@ impl Port for TcpStreamPort {
     }
 
     fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {
-        let write_size = self.stream.write(buf)?;
+        let write_size = self
+            .stream
+            .write(buf)
+            .inspect_err(|err| log::error!("{} send data, err={}", self.trace_id(), err))?;
 
         Ok(write_size)
     }
 
     fn read(&mut self, buf: &mut [u8]) -> crate::errors::Result<usize> {
-        let read_size = self.stream.read(buf)?;
+        let read_size = self
+            .stream
+            .read(buf)
+            .inspect_err(|err| log::error!("{} read data, err={}", self.trace_id(), err))?;
 
         Ok(read_size)
     }
 
     fn close(&mut self) -> crate::errors::Result<()> {
-        self.stream.shutdown(std::net::Shutdown::Both)?;
+        self.stream
+            .shutdown(std::net::Shutdown::Both)
+            .inspect_err(|err| log::error!("{} shutdown, err={}", self.trace_id(), err))?;
         Ok(())
     }
 }
