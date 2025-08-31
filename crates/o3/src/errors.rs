@@ -2,6 +2,8 @@ use std::io::ErrorKind;
 
 use quico::quiche;
 
+use crate::token::Token;
+
 /// Error type used by `o3`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -17,13 +19,13 @@ pub enum Error {
     #[error("Retry this operation later.")]
     Retry,
 
-    /// Returns by `copy` function, the sink port is full.
-    #[error("Sink port is would block, retry later.")]
-    Sink,
+    /// Sink port is not found.
+    #[error("Sink port of {0:?} is not found.")]
+    Sink(Token),
 
-    /// Returns by `copy` function, the source port is empty.
-    #[error("Source port is would block, retry later.")]
-    Source,
+    /// Source port is not found.
+    #[error("Source port of {0:?} is not found.")]
+    Source(Token),
 
     #[error("Port is not found.")]
     Port,

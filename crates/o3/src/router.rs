@@ -1,12 +1,16 @@
-use std::collections::HashMap;
+use std::{cell::UnsafeCell, collections::HashMap};
 
-use crate::{port::BufPort, token::Token};
+use crate::{
+    errors::{Error, Result},
+    port::{BufPort, copy},
+    token::Token,
+};
 
 /// A router maintains a set of port-to-port bi-directional
 /// data routing relationships
 #[derive(Default)]
 pub struct Router {
-    ports: HashMap<Token, BufPort>,
+    ports: HashMap<Token, UnsafeCell<BufPort>>,
     sinks: HashMap<Token, Token>,
     sources: HashMap<Token, Token>,
 }
@@ -22,17 +26,68 @@ impl Router {
         let from_token = from.token();
         let to_token = to.token();
 
+        assert_ne!(
+            from_token, to_token,
+            "The source and sink ports are the same"
+        );
+
         assert!(
-            self.ports.insert(from.token(), from).is_none(),
+            self.ports
+                .insert(from.token(), UnsafeCell::new(from))
+                .is_none(),
             "Register from twice."
         );
 
         assert!(
-            self.ports.insert(to.token(), to).is_none(),
+            self.ports.insert(to.token(), UnsafeCell::new(to)).is_none(),
             "Register to twice."
         );
 
         self.sinks.insert(from_token, to_token);
         self.sources.insert(to_token, from_token);
+    }
+
+    /// Send data over port.
+    pub fn send<T>(&mut self, token: T) -> Result<usize>
+    where
+        T: Into<Token>,
+    {
+        let sink_token = token.into();
+
+        let source_token = self
+            .sources
+            .get_mut(&sink_token)
+            .copied()
+            .ok_or_else(|| Error::Source(sink_token))?;
+
+        // Safety: The router guarantees that only one mutable reference to one port will be created at a time
+        let source = unsafe { self.get(&source_token, "Source port.") };
+        let sink = unsafe { self.get(&sink_token, "Sink port.") };
+
+        copy(source, sink)
+    }
+
+    /// Recv data from port.
+    pub fn recv<T>(&mut self, token: T) -> Result<usize>
+    where
+        T: Into<Token>,
+    {
+        let source_token = token.into();
+
+        let sink_token = self
+            .sinks
+            .get_mut(&source_token)
+            .copied()
+            .ok_or_else(|| Error::Sink(source_token))?;
+
+        // Safety: The router guarantees that only one mutable reference to one port will be created at a time
+        let source = unsafe { self.get(&source_token, "Source port.") };
+        let sink = unsafe { self.get(&sink_token, "Sink port.") };
+
+        copy(source, sink)
+    }
+
+    unsafe fn get(&mut self, token: &Token, msg: &'static str) -> &'static mut BufPort {
+        unsafe { self.ports.get(token).expect(msg).get().as_mut().unwrap() }
     }
 }
