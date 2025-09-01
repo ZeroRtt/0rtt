@@ -130,7 +130,7 @@ pub struct Cli {
 
 impl Cli {
     #[cfg(feature = "agent")]
-    pub fn parse_redirect_server_addrs(&self) -> Result<Vec<SocketAddr>> {
+    pub fn parse_o3_server_addrs(&self) -> Result<Vec<SocketAddr>> {
         let mut laddrs: Vec<SocketAddr> = vec![];
 
         for port in self.redirect_server_port_range.clone() {

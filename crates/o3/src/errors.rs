@@ -2,7 +2,7 @@ use std::io::ErrorKind;
 
 use quico::quiche;
 
-use crate::token::Token;
+use crate::{buf::QuicBuf, token::Token};
 
 /// Error type used by `o3`.
 #[derive(Debug, thiserror::Error)]
@@ -34,7 +34,7 @@ pub enum Error {
     ValidateAddress,
 
     #[error("Quic socket send queue is full.")]
-    IsFull,
+    IsFull(QuicBuf),
 }
 
 impl From<std::io::Error> for Error {

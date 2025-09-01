@@ -1,6 +1,6 @@
 //! Tiny and fixed length buffer for protocol parsing.
 
-use std::{collections::VecDeque, net::SocketAddr, task::Poll};
+use std::{collections::VecDeque, fmt::Debug, net::SocketAddr};
 
 use mio::net::UdpSocket;
 
@@ -15,6 +15,12 @@ pub struct ArrayBuf<const LEN: usize> {
     buf: Box<[u8; LEN]>,
     /// written data length.
     len: usize,
+}
+
+impl<const LEN: usize> Debug for ArrayBuf<LEN> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ArrayBuf[{}]", LEN)
+    }
 }
 
 impl<const LEN: usize> AsRef<[u8]> for ArrayBuf<LEN> {
@@ -102,7 +108,7 @@ impl QuicSocket {
         _ = self.flush().would_block()?;
 
         if self.is_full() {
-            return Err(Error::IsFull);
+            return Err(Error::IsFull(buf));
         }
 
         let len = buf.len();

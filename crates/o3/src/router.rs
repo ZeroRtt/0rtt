@@ -57,6 +57,8 @@ impl Router {
 
         self.sinks.insert(to_token, from_token);
         self.sources.insert(from_token, to_token);
+
+        log::trace!("Register route, from={:?}, to={:?}", from_token, to_token);
     }
 
     /// Send data over port.
@@ -97,7 +99,16 @@ impl Router {
         let sink = unsafe { self.get(&sink_token, "Sink port.") };
 
         match copy(source, sink) {
-            Ok(transferred) => Ok(transferred),
+            Ok(transferred) => {
+                log::trace!(
+                    "Router transferred data, from={:?}, to={:?}, len={}",
+                    source_token,
+                    sink_token,
+                    transferred
+                );
+
+                Ok(transferred)
+            }
             Err(Error::Retry) => Err(Error::Retry),
             Err(_) => {
                 assert_eq!(self.sources.remove(&sink_token), Some(source_token));
