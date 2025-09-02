@@ -47,8 +47,8 @@ pub struct Agent {
     config: quiche::Config,
     /// quic group.
     group: Arc<quico::Group>,
-    /// paring tcp streams.
-    paring_tcp_streams: VecDeque<TcpStream>,
+    /// pairing tcp streams.
+    pairing_tcp_streams: VecDeque<TcpStream>,
     /// active quic connections.
     quic_conns: HashSet<quico::Token>,
     /// router for tcp traffic.
@@ -88,7 +88,7 @@ impl Agent {
             quic_local_addr: udp_socket.local_addr()?,
             quic_socket: QuicSocket::new(udp_socket, 1024),
             group: Arc::new(group),
-            paring_tcp_streams: Default::default(),
+            pairing_tcp_streams: Default::default(),
             quic_conns: Default::default(),
             router: Router::new(),
             raddrs,
@@ -162,7 +162,6 @@ impl Agent {
         Ok(())
     }
 
-    #[allow(unused)]
     fn next_mio_token(&mut self) -> mio::Token {
         loop {
             let token = mio::Token(self.mio_token_next);
@@ -245,7 +244,7 @@ impl Agent {
 
         log::trace!("new inbound TCP stream, {}", from);
 
-        self.paring_tcp_streams.push_back(stream);
+        self.pairing_tcp_streams.push_back(stream);
 
         self.make_pipelines()
     }
@@ -277,12 +276,12 @@ impl Agent {
     }
 
     fn make_pipelines(&mut self) -> Result<()> {
-        while !self.paring_tcp_streams.is_empty() {
+        while !self.pairing_tcp_streams.is_empty() {
             let Poll::Ready((conn_id, stream_id)) = self.quic_stream_open().would_block()? else {
                 return Ok(());
             };
 
-            let tcp_stream = self.paring_tcp_streams.pop_front().unwrap();
+            let tcp_stream = self.pairing_tcp_streams.pop_front().unwrap();
 
             let tcp_stream_token = self.next_mio_token();
 

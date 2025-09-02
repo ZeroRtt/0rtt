@@ -45,7 +45,7 @@ fn parse_port_range(arg: &str) -> std::result::Result<Range<u16>, String> {
 #[command(version, about, long_about = None)]
 pub struct Cli {
     /// Set agent proto list.
-    #[arg(long, value_name = "PROTO_LIST", default_values_t = ["redirect".to_string()])]
+    #[arg(long, value_name = "PROTO_LIST", default_values_t = ["rproxy".to_string()])]
     pub protos: Vec<String>,
 
     #[cfg(feature = "agent")]
@@ -58,12 +58,12 @@ pub struct Cli {
     #[arg(short = 'p', long = "server-ports", value_name = "PORT", value_parser=parse_port_range)]
     pub redirect_server_port_range: Range<u16>,
 
-    #[cfg(feature = "redirect")]
+    #[cfg(feature = "rproxy")]
     /// Specify redirect server listening address list.
     #[arg(short = 'l', long = "listen", value_name = "ADDR")]
     pub redirect_ip: Option<Vec<IpAddr>>,
 
-    #[cfg(feature = "redirect")]
+    #[cfg(feature = "rproxy")]
     /// Specify the redirect server listening port range.
     #[arg(short = 'p', long = "port", value_name = "PORT", value_parser=parse_port_range)]
     pub redirect_port_range: Range<u16>,
@@ -76,7 +76,7 @@ pub struct Cli {
     #[arg(short, long, value_name = "PEM_FILE", default_value = "redirect.key")]
     pub key: PathBuf,
 
-    #[cfg(feature = "redirect")]
+    #[cfg(feature = "rproxy")]
     /// Specifies a file where trusted CA certificates are stored for the purposes of peer's certificate verification.
     #[arg(short, long, value_name = "PEM_FILE")]
     verify_peer: Option<PathBuf>,
@@ -140,7 +140,7 @@ impl Cli {
         Ok(laddrs)
     }
 
-    #[cfg(feature = "redirect")]
+    #[cfg(feature = "rproxy")]
     pub fn parse_redirect_listen_addrs(&self) -> Result<Vec<SocketAddr>> {
         let ips = if let Some(interfaces) = self.redirect_ip.clone() {
             interfaces
@@ -202,7 +202,7 @@ impl Cli {
                 )
             })?;
 
-        #[cfg(feature = "redirect")]
+        #[cfg(feature = "rproxy")]
         if let Some(ca) = &self.verify_peer {
             config
                 .load_verify_locations_from_file(ca.to_str().unwrap())
@@ -238,9 +238,9 @@ pub enum Commands {
         on: Option<SocketAddr>,
     },
 
-    #[cfg(feature = "redirect")]
-    /// Start a agent service.
-    Redirect {
+    #[cfg(feature = "rproxy")]
+    /// Start a rproxy service.
+    ReverseProxy {
         /// Specify the redirect target address
         target: SocketAddr,
     },

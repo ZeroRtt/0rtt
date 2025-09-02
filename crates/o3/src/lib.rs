@@ -12,6 +12,10 @@ pub mod would_block;
 #[cfg_attr(docsrs, doc(cfg(feature = "agent")))]
 pub mod agent;
 
+#[cfg(feature = "rproxy")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rproxy")))]
+pub mod rproxy;
+
 #[cfg(feature = "cli")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cli")))]
 pub mod cli;
