@@ -8,9 +8,9 @@ repository = "https://github.com/ZeroRtt/ZeroRtt/quico"
 version = "0.1.1"
 
 [dependencies]
-quiche = { version = "^0.24" }
+quiche = { version = "^0.24", default-features = false, features = ["boringssl-boring-crate"] }
 log = { version = "^0.4" }
-thiserror = "2.0.12"
+thiserror = "^2.0"
 priority-queue = "2.5.0"
 parking_lot = "0.12.4"
 boring = { version = "^4.17" }

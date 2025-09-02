@@ -75,9 +75,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "bindgen"
-version = "0.71.1"
+version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
 dependencies = [
  "bitflags",
  "cexpr",
@@ -99,9 +99,9 @@ checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "boring"
-version = "4.17.0"
+version = "4.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f4ea552f8764e7235bb0b6aaec33b891e5b178c77d8c96cfad6c10f057c64a6"
+checksum = "b88c15936fdae0c8cef68ffdf1d1ed32868e17ff1e3653e579e367913b752b34"
 dependencies = [
  "bitflags",
  "boring-sys",
@@ -112,9 +112,9 @@ dependencies = [
 
 [[package]]
 name = "boring-sys"
-version = "4.17.0"
+version = "4.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b753c2916f46e25e08abd2cd52b35223a65b7e8a1696ee33b45e20927114696f"
+checksum = "8bf38ea1ed7dd4fce0cb42e5d6ac0c4ed83830b9395069e791424f92ff001a03"
 dependencies = [
  "autocfg",
  "bindgen",
@@ -813,10 +813,12 @@ version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1074d39fd8de884478ab94220330f3127c7308475d537a42719914e9ae870cd5"
 dependencies = [
+ "boring",
  "cmake",
  "debug_panic",
  "either",
  "enum_dispatch",
+ "foreign-types-shared",
  "intrusive-collections",
  "libc",
  "libm",
