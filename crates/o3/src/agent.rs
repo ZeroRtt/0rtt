@@ -2,7 +2,7 @@
 
 use std::{
     collections::{HashSet, VecDeque},
-    net::SocketAddr,
+    net::{Ipv6Addr, SocketAddr},
     sync::Arc,
     task::Poll,
     time::Instant,
@@ -70,7 +70,11 @@ impl Agent {
         poll.registry()
             .register(&mut tcp_listener, TCP_TOKEN, Interest::READABLE)?;
 
-        let mut udp_socket = UdpSocket::bind("[::]:0".parse().unwrap())?;
+        let mut udp_socket = UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0).into())?;
+
+        let local_addr = udp_socket.local_addr()?;
+
+        log::trace!("quic socket bind to: {}", local_addr);
 
         poll.registry().register(
             &mut udp_socket,
@@ -86,7 +90,7 @@ impl Agent {
             mio_poll: poll,
             tcp_listener,
             quic_local_addr: udp_socket.local_addr()?,
-            quic_socket: QuicSocket::new(udp_socket, 1024),
+            quic_socket: QuicSocket::new(udp_socket, local_addr, 1024),
             group: Arc::new(group),
             pairing_tcp_streams: Default::default(),
             quic_conns: Default::default(),
@@ -145,14 +149,18 @@ impl Agent {
             } else if token == UDP_TOKEN {
                 if event.is_readable() {
                     self.on_udp_recv()?;
-                } else {
+                }
+
+                if event.is_writable() {
                     self.on_udp_send()?;
                 }
             } else {
                 if self.router.contains_port(token) {
                     if event.is_readable() {
                         self.router_recv(token)?;
-                    } else {
+                    }
+
+                    if event.is_writable() {
                         self.router_send(token)?;
                     }
                 }
@@ -170,12 +178,14 @@ impl Agent {
             (self.mio_token_next, overflow) = self.mio_token_next.overflowing_add(1);
 
             if overflow {
-                self.mio_token_next = 1;
+                self.mio_token_next = 2;
             }
 
             if self.router.contains_port(token) {
                 continue;
             }
+
+            return token;
         }
     }
 
@@ -187,19 +197,19 @@ impl Agent {
             return Ok(());
         }
 
-        let mut buf = QuicBuf::new();
+        loop {
+            let mut buf = QuicBuf::new();
 
-        let Poll::Ready(Ok((send_size, send_info))) =
-            self.group.send(token, buf.writable_buf()).would_block()
-        else {
-            return Ok(());
-        };
+            let Poll::Ready(Ok((send_size, send_info))) =
+                self.group.send(token, buf.writable_buf()).would_block()
+            else {
+                return Ok(());
+            };
 
-        buf.truncate(send_size);
+            buf.truncate(send_size);
 
-        self.quic_socket.send_to(buf, send_info.to)?;
-
-        Ok(())
+            self.quic_socket.send_to(buf, send_info.to)?;
+        }
     }
 
     fn on_quic_connected(&mut self, token: quico::Token) -> Result<()> {

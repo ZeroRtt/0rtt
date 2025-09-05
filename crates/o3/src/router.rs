@@ -35,6 +35,8 @@ impl Router {
         let from_token = from.token();
         let to_token = to.token();
 
+        log::trace!("register router, from={:?}, to={:?}", from_token, to_token);
+
         assert_ne!(
             from_token, to_token,
             "The source and sink ports are the same"
@@ -122,5 +124,56 @@ impl Router {
 
     unsafe fn get(&mut self, token: &Token, msg: &'static str) -> &'static mut BufPort {
         unsafe { self.ports.get(token).expect(msg).get().as_mut().unwrap() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        port::{BufPort, Port},
+        router::Router,
+        token::Token,
+    };
+
+    struct Mock(usize);
+
+    impl Port for Mock {
+        fn trace_id(&self) -> &str {
+            "mock"
+        }
+
+        fn token(&self) -> crate::token::Token {
+            Token::Mio(self.0)
+        }
+
+        fn write(&mut self, _: &[u8]) -> crate::errors::Result<usize> {
+            todo!()
+        }
+
+        fn read(&mut self, _: &mut [u8]) -> crate::errors::Result<usize> {
+            todo!()
+        }
+
+        fn close(&mut self) -> crate::errors::Result<()> {
+            todo!()
+        }
+    }
+
+    #[test]
+    fn test_register() {
+        let m1 = Mock(1);
+        let m2 = Mock(2);
+
+        let mut router = Router::new();
+
+        router.register(BufPort::new(m1, 100), BufPort::new(m2, 100));
+
+        assert!(router.contains_port(Token::Mio(1)));
+        assert!(router.contains_port(Token::Mio(2)));
+
+        assert_eq!(router.sources.get(&Token::Mio(1)), Some(&Token::Mio(2)));
+        assert_eq!(router.sources.get(&Token::Mio(2)), Some(&Token::Mio(1)));
+        assert_eq!(router.sinks.get(&Token::Mio(1)), Some(&Token::Mio(2)));
+        assert_eq!(router.sinks.get(&Token::Mio(2)), Some(&Token::Mio(1)));
     }
 }

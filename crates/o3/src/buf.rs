@@ -1,6 +1,6 @@
 //! Tiny and fixed length buffer for protocol parsing.
 
-use std::{collections::VecDeque, fmt::Debug, net::SocketAddr};
+use std::{collections::VecDeque, fmt::Debug, io::ErrorKind, net::SocketAddr};
 
 use mio::net::UdpSocket;
 
@@ -73,16 +73,24 @@ pub struct QuicSocket {
     max_pending_size: usize,
     sending: VecDeque<(QuicBuf, SocketAddr)>,
     socket: UdpSocket,
+    local_addr: SocketAddr,
 }
 
 impl QuicSocket {
     /// Convert [`UdpSocket`] into quic socket(with sending fifo).
-    pub fn new(socket: UdpSocket, max_pending_size: usize) -> Self {
+    pub fn new(socket: UdpSocket, local_addr: SocketAddr, max_pending_size: usize) -> Self {
         Self {
+            local_addr,
             max_pending_size,
             sending: Default::default(),
             socket,
         }
+    }
+
+    /// Returns socket's local bound address.
+    #[inline]
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 
     /// Check if the sending `fifo` is full.
@@ -95,7 +103,17 @@ impl QuicSocket {
         while !self.sending.is_empty() {
             let (buf, target) = self.sending.front().unwrap();
 
-            self.socket.send_to(buf.as_ref(), *target)?;
+            log::trace!("buf={}, target={}", buf.as_ref().len(), *target);
+
+            self.socket
+                .send_to(buf.as_ref(), *target)
+                .inspect_err(|err| {
+                    if err.kind() == ErrorKind::WouldBlock {
+                        log::trace!("UdpSocket send_to, pending");
+                    } else {
+                        log::error!("UdpSocket send_to, err={}", err);
+                    }
+                })?;
 
             self.sending.pop_front();
         }
@@ -131,6 +149,7 @@ impl QuicSocket {
 
 #[cfg(test)]
 mod tests {
+
     use crate::buf::QuicBuf;
 
     #[test]

@@ -58,12 +58,12 @@ pub struct Cli {
     #[arg(short = 'p', long = "server-ports", value_name = "PORT", value_parser=parse_port_range)]
     pub redirect_server_port_range: Range<u16>,
 
-    #[cfg(feature = "rproxy")]
+    #[cfg(feature = "o3")]
     /// Specify redirect server listening address list.
     #[arg(short = 'l', long = "listen", value_name = "ADDR")]
     pub redirect_ip: Option<Vec<IpAddr>>,
 
-    #[cfg(feature = "rproxy")]
+    #[cfg(feature = "o3")]
     /// Specify the redirect server listening port range.
     #[arg(short = 'p', long = "port", value_name = "PORT", value_parser=parse_port_range)]
     pub redirect_port_range: Range<u16>,
@@ -76,7 +76,7 @@ pub struct Cli {
     #[arg(short, long, value_name = "PEM_FILE", default_value = "redirect.key")]
     pub key: PathBuf,
 
-    #[cfg(feature = "rproxy")]
+    #[cfg(feature = "o3")]
     /// Specifies a file where trusted CA certificates are stored for the purposes of peer's certificate verification.
     #[arg(short, long, value_name = "PEM_FILE")]
     verify_peer: Option<PathBuf>,
@@ -133,14 +133,20 @@ impl Cli {
     pub fn parse_o3_server_addrs(&self) -> Result<Vec<SocketAddr>> {
         let mut laddrs: Vec<SocketAddr> = vec![];
 
+        let redirect_server_ip = if let IpAddr::V4(v4) = self.redirect_server_ip {
+            v4.to_ipv6_mapped().into()
+        } else {
+            self.redirect_server_ip
+        };
+
         for port in self.redirect_server_port_range.clone() {
-            laddrs.push(SocketAddr::new(self.redirect_server_ip, port));
+            laddrs.push(SocketAddr::new(redirect_server_ip, port));
         }
 
         Ok(laddrs)
     }
 
-    #[cfg(feature = "rproxy")]
+    #[cfg(feature = "o3")]
     pub fn parse_redirect_listen_addrs(&self) -> Result<Vec<SocketAddr>> {
         let ips = if let Some(interfaces) = self.redirect_ip.clone() {
             interfaces
@@ -202,7 +208,7 @@ impl Cli {
                 )
             })?;
 
-        #[cfg(feature = "rproxy")]
+        #[cfg(feature = "o3")]
         if let Some(ca) = &self.verify_peer {
             config
                 .load_verify_locations_from_file(ca.to_str().unwrap())
@@ -238,9 +244,9 @@ pub enum Commands {
         on: Option<SocketAddr>,
     },
 
-    #[cfg(feature = "rproxy")]
+    #[cfg(feature = "o3")]
     /// Start a rproxy service.
-    ReverseProxy {
+    Redirect {
         /// Specify the redirect target address
         target: SocketAddr,
     },
