@@ -26,13 +26,13 @@ o3 = []
 agent = ["rand"]
 cli = ["clap", "pretty_env_logger", "color-print"]
 
-[[bin]]
-name = "o3-agent"
-path = "src/bin/agent.rs"
-required-features = ["agent", "cli"]
+# [[bin]]
+# name = "o3-agent"
+# path = "src/bin/agent.rs"
+# required-features = ["agent", "cli"]
 
 
-[[bin]]
-name = "o3"
-path = "src/bin/o3.rs"
-required-features = ["o3", "cli"]
+# [[bin]]
+# name = "o3"
+# path = "src/bin/o3.rs"
+# required-features = ["o3", "cli"]

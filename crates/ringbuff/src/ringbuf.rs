@@ -149,6 +149,10 @@ impl RingBuf {
         let start = (self.write_pos % self.memory_block.len() as u64) as usize;
         let end = (write_end_pos % self.memory_block.len() as u64) as usize;
 
+        if write_size == 0 {
+            return (start..end, None);
+        }
+
         if start < end {
             (start..end, None)
         } else {
@@ -163,6 +167,10 @@ impl RingBuf {
 
         let start = (self.read_pos % self.memory_block.len() as u64) as usize;
         let end = (read_end_pos % self.memory_block.len() as u64) as usize;
+
+        if read_size == 0 {
+            return (start..end, None);
+        }
 
         if start < end {
             (start..end, None)
@@ -247,6 +255,25 @@ impl AsyncWrite for RingBuf {
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn test_unsafe_fns() {
+        let mut ringbuf = RingBuf::with_capacity(11);
+        unsafe {
+            assert_eq!(ringbuf.writable_buf().len(), 11);
+            ringbuf.writable_buf().copy_from_slice(b"12345678901");
+            ringbuf.writable_consume(5);
+            assert_eq!(ringbuf.writable_buf().len(), 6);
+            assert_eq!(ringbuf.readable_buf().len(), 5);
+            ringbuf.writable_consume(6);
+            assert_eq!(ringbuf.writable(), 0);
+            assert_eq!(ringbuf.writable_buf().len(), 0);
+            assert_eq!(ringbuf.readable_buf().len(), 11);
+            ringbuf.readable_consume(3);
+            assert_eq!(ringbuf.readable_buf(), b"45678901");
+            assert_eq!(ringbuf.writable_buf(), b"123");
+        }
+    }
 
     #[test]
     fn test_pos() {
