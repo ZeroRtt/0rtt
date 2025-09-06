@@ -256,6 +256,23 @@ mod tests {
 
     use super::*;
 
+    use test_fuzz::test_fuzz;
+
+    #[test_fuzz]
+    fn fuzz_test_unsafe_fn(offset: usize) {
+        let offset = offset % 11;
+        let mut ringbuf = RingBuf::with_capacity(11);
+
+        unsafe {
+            assert_eq!(ringbuf.writable_buf().len(), 11);
+            ringbuf.writable_consume(offset);
+
+            assert_eq!(ringbuf.writable_buf().len(), 11 - offset);
+
+            assert_eq!(ringbuf.readable_buf().len(), offset);
+        }
+    }
+
     #[test]
     fn test_unsafe_fns() {
         let mut ringbuf = RingBuf::with_capacity(11);

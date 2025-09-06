@@ -353,7 +353,7 @@ fn test_stream_open() {
                     .unwrap();
             }
 
-            if event.kind == EventKind::StreamRecv {
+            if event.kind == EventKind::StreamRecv || event.kind == EventKind::StreamAccept {
                 let mut buf = vec![0; 1300];
                 let (read_size, fin) = group
                     .stream_recv(event.token, event.stream_id, &mut buf)
@@ -462,7 +462,9 @@ fn test_stream_open_limits() {
                     .unwrap();
             }
 
-            if event.kind == EventKind::StreamRecv && event.token != client {
+            if (event.kind == EventKind::StreamRecv || event.kind == EventKind::StreamAccept)
+                && event.token != client
+            {
                 i += 1;
                 let mut buf = vec![0; 1300];
                 let (read_size, fin) = group
@@ -609,14 +611,16 @@ fn test_server_side_stream_open() {
                     .unwrap();
             }
 
-            if event.kind == EventKind::StreamRecv && event.token == client {
+            if (event.kind == EventKind::StreamRecv || event.kind == EventKind::StreamAccept)
+                && event.token == client
+            {
                 i += 1;
                 let mut buf = vec![0; 1300];
                 let (read_size, fin) = group
                     .stream_recv(event.token, event.stream_id, &mut buf)
                     .unwrap();
 
-                assert_eq!(&buf[..read_size], b"hello");
+                assert_eq!(&buf[..read_size], b"hello", "{}", i);
                 assert!(fin);
 
                 group
