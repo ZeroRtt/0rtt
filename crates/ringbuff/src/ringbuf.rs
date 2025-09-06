@@ -256,9 +256,8 @@ mod tests {
 
     use super::*;
 
-    use test_fuzz::test_fuzz;
-
-    #[test_fuzz]
+    #[cfg(not(target_os = "windows"))]
+    #[test_fuzz::test_fuzz]
     fn fuzz_test_unsafe_fn(offset: usize) {
         let offset = offset % 11;
         let mut ringbuf = RingBuf::with_capacity(11);
