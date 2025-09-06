@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 
 use mio::net::TcpStream;
 
@@ -32,19 +32,21 @@ impl Port for TcpStreamPort {
     }
 
     fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {
-        let write_size = self
-            .stream
-            .write(buf)
-            .inspect_err(|err| log::error!("{} send data, err={}", self.trace_id(), err))?;
+        let write_size = self.stream.write(buf).inspect_err(|err| {
+            if err.kind() != ErrorKind::WouldBlock {
+                log::error!("{} write data, err={}", self.trace_id(), err)
+            }
+        })?;
 
         Ok(write_size)
     }
 
     fn read(&mut self, buf: &mut [u8]) -> crate::errors::Result<usize> {
-        let read_size = self
-            .stream
-            .read(buf)
-            .inspect_err(|err| log::error!("{} read data, err={}", self.trace_id(), err))?;
+        let read_size = self.stream.read(buf).inspect_err(|err| {
+            if err.kind() != ErrorKind::WouldBlock {
+                log::error!("{} read data, err={}", self.trace_id(), err)
+            }
+        })?;
 
         Ok(read_size)
     }
@@ -52,7 +54,11 @@ impl Port for TcpStreamPort {
     fn close(&mut self) -> crate::errors::Result<()> {
         self.stream
             .shutdown(std::net::Shutdown::Both)
-            .inspect_err(|err| log::error!("{} shutdown, err={}", self.trace_id(), err))?;
+            .inspect_err(|err| {
+                if err.kind() != ErrorKind::WouldBlock {
+                    log::error!("{} shutdown, err={}", self.trace_id(), err)
+                }
+            })?;
         Ok(())
     }
 }

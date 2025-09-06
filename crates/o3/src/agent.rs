@@ -120,6 +120,7 @@ impl Agent {
                 quico::EventKind::Recv => unreachable!("Single thread mode."),
                 quico::EventKind::Connected => self.on_quic_connected(event.token)?,
                 quico::EventKind::Accept => unreachable!("quic accept"),
+                quico::EventKind::StreamAccept => unreachable!("quic accept"),
                 quico::EventKind::Closed => self.on_quic_closed(event.token)?,
                 quico::EventKind::StreamOpen => self.on_quic_stream_open(event.token)?,
                 quico::EventKind::StreamSend => self.router_send((event.token, event.stream_id))?,
@@ -142,6 +143,8 @@ impl Agent {
         self.mio_poll.poll(&mut events, timeout)?;
 
         for event in events.iter() {
+            log::trace!("mio event: {:?}", event);
+
             let token = event.token();
 
             if token == TCP_TOKEN {
@@ -291,9 +294,15 @@ impl Agent {
                 return Ok(());
             };
 
-            let tcp_stream = self.pairing_tcp_streams.pop_front().unwrap();
+            let mut tcp_stream = self.pairing_tcp_streams.pop_front().unwrap();
 
             let tcp_stream_token = self.next_mio_token();
+
+            self.mio_poll.registry().register(
+                &mut tcp_stream,
+                tcp_stream_token,
+                Interest::READABLE | Interest::WRITABLE,
+            )?;
 
             self.router.register(
                 BufPort::new(

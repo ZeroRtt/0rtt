@@ -117,21 +117,12 @@ impl Redirect {
                 quico::EventKind::Connected => unreachable!("Quic server side"),
                 quico::EventKind::Accept => self.on_quic_accept(event.token)?,
                 quico::EventKind::Closed => self.on_quic_closed(event.token)?,
+                quico::EventKind::StreamAccept => {
+                    self.on_quic_stream_accept(event.token, event.stream_id)?
+                }
                 quico::EventKind::StreamOpen => unreachable!("Quic server side."),
                 quico::EventKind::StreamSend => self.router_send((event.token, event.stream_id))?,
-                quico::EventKind::StreamRecv => {
-                    let token = (event.token, event.stream_id);
-
-                    if !self.router.contains_port(token) {
-                        self.pairing_quic_streams.push_back(token);
-                        let tcp_stream = TcpStream::connect(self.target)?;
-                        let token = self.next_mio_token();
-                        self.connecting_tcp_streams.insert(token, tcp_stream);
-                        continue;
-                    }
-
-                    self.router_recv(token)?
-                }
+                quico::EventKind::StreamRecv => self.router_recv((event.token, event.stream_id))?,
             }
         }
 
@@ -150,6 +141,7 @@ impl Redirect {
         self.poll.poll(&mut events, timeout)?;
 
         for event in events.iter() {
+            log::trace!("raised event: {:?}", event);
             let token = event.token();
 
             // for udp sockets.
@@ -162,16 +154,16 @@ impl Redirect {
                     self.on_udp_send(token)?;
                 }
             } else {
-                if self.router.contains_port(token) {
-                    if event.is_readable() {
-                        self.router_recv(token)?;
-                    }
+                if event.is_readable() {
+                    self.router_recv(token)?;
+                }
 
-                    if event.is_writable() {
+                if event.is_writable() {
+                    if self.connecting_tcp_streams.contains_key(&token) {
+                        self.on_tcp_stream_connect(token)?;
+                    } else {
                         self.router_send(token)?;
                     }
-                } else if self.connecting_tcp_streams.contains_key(&token) {
-                    self.on_tcp_stream_connect(token)?;
                 }
 
                 // for tcp streams.
@@ -237,7 +229,7 @@ impl Redirect {
                     BufPort::new(TcpStreamPort::new(tcp_stream, token), self.port_buffer_size),
                 );
 
-                return Ok(());
+                self.router_recv((quic_conn_id, quic_stream_id))
             }
             Err(err)
                 if err.kind() == ErrorKind::NotConnected
@@ -307,6 +299,27 @@ impl Redirect {
     }
 
     fn on_quic_accept(&mut self, _: quico::Token) -> Result<()> {
+        Ok(())
+    }
+
+    fn on_quic_stream_accept(&mut self, token: quico::Token, stream_id: u64) -> Result<()> {
+        let token = (token, stream_id);
+
+        log::trace!("create outbound tcp stream, target={}", self.target);
+
+        self.pairing_quic_streams.push_back(token);
+
+        let mut tcp_stream = TcpStream::connect(self.target)?;
+        let token = self.next_mio_token();
+
+        self.poll.registry().register(
+            &mut tcp_stream,
+            token,
+            Interest::READABLE | Interest::WRITABLE,
+        )?;
+
+        self.connecting_tcp_streams.insert(token, tcp_stream);
+
         Ok(())
     }
 

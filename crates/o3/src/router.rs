@@ -111,8 +111,21 @@ impl Router {
 
                 Ok(transferred)
             }
-            Err(Error::Retry) => Err(Error::Retry),
-            Err(_) => {
+            Err(Error::Retry) => {
+                log::trace!(
+                    "Router transferred data, from={:?}, to={:?}, pending",
+                    source_token,
+                    sink_token,
+                );
+                Err(Error::Retry)
+            }
+            Err(err) => {
+                log::error!(
+                    "Broken routing, from={:?}, to={:?}, err={}",
+                    source_token,
+                    sink_token,
+                    err
+                );
                 assert_eq!(self.sources.remove(&sink_token), Some(source_token));
                 assert_eq!(self.sources.remove(&source_token), Some(sink_token));
                 assert_eq!(self.sinks.remove(&source_token), Some(sink_token));

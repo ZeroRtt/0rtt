@@ -87,14 +87,20 @@ impl BufPort {
         let mut send_size = 0;
 
         loop {
+            let mut broken_pipe = false;
+
             match other.read() {
                 Err(Error::Retry) => {}
                 Err(err) => return Err(err),
-                _ => {}
+                Ok(read_size) => broken_pipe = read_size == 0,
             }
 
             // no data to send.
             if other.buf.readable() == 0 {
+                if broken_pipe {
+                    return Err(Error::BrokenPipe(send_size));
+                }
+
                 if send_size > 0 {
                     return Ok(send_size);
                 }
@@ -127,6 +133,10 @@ impl BufPort {
                         send_size += write_size;
                     }
                     Err(Error::Retry) => {
+                        if broken_pipe {
+                            return Err(Error::BrokenPipe(send_size));
+                        }
+
                         if send_size > 0 {
                             return Ok(send_size);
                         } else {

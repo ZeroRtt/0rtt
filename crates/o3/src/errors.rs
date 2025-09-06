@@ -35,6 +35,10 @@ pub enum Error {
 
     #[error("Quic socket send queue is full.")]
     IsFull(QuicBuf),
+
+    /// The operation failed because a pipe was closed.
+    #[error("The operation failed because a pipe was closed.")]
+    BrokenPipe(usize),
 }
 
 impl From<std::io::Error> for Error {

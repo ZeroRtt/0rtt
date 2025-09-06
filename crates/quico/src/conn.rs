@@ -36,6 +36,16 @@ impl LocKind {
     }
 }
 
+/// Returns true if the stream was created locally.
+fn is_local(stream_id: u64, is_server: bool) -> bool {
+    (stream_id & 0x1) == (is_server as u64)
+}
+
+/// Returns true if the stream is bidirectional.
+fn is_bidi(stream_id: u64) -> bool {
+    (stream_id & 0x2) == 0
+}
+
 /// Internal connection state.
 pub struct ConnState {
     /// Connection id.
@@ -52,6 +62,8 @@ pub struct ConnState {
     lock_count: u64,
     /// Record the next locally opened bi-directional stream id
     local_bidi_stream_id_next: u64,
+    /// The biggest inbound stream ID currently seen.
+    inbound_stream_id_current: u64,
 }
 
 /// unwrap `quiche::Connection` from `ConnState`
@@ -86,6 +98,7 @@ impl ConnState {
             locked: LocKind::None,
             retries: Default::default(),
             lock_count: 0,
+            inbound_stream_id_current: 0,
         }
     }
 
@@ -454,16 +467,34 @@ impl ConnState {
         }
 
         while let Some(stream_id) = conn.stream_readable_next() {
-            readiness.insert(
-                Event {
-                    kind: EventKind::StreamRecv,
-                    is_server: conn.is_server(),
-                    is_error: false,
-                    token: self.id,
-                    stream_id,
-                },
-                None,
-            );
+            if is_bidi(stream_id)
+                && !is_local(stream_id, conn.is_server())
+                && self.inbound_stream_id_current < stream_id
+            {
+                self.inbound_stream_id_current = stream_id;
+
+                readiness.insert(
+                    Event {
+                        kind: EventKind::StreamAccept,
+                        is_server: conn.is_server(),
+                        is_error: false,
+                        token: self.id,
+                        stream_id,
+                    },
+                    None,
+                );
+            } else {
+                readiness.insert(
+                    Event {
+                        kind: EventKind::StreamRecv,
+                        is_server: conn.is_server(),
+                        is_error: false,
+                        token: self.id,
+                        stream_id,
+                    },
+                    None,
+                );
+            }
         }
 
         let now = Instant::now();

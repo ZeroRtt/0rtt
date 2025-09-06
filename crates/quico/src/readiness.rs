@@ -17,6 +17,8 @@ pub enum EventKind {
     Closed,
     /// Readiness for `stream_open` operation.
     StreamOpen,
+    /// Readiness for new inbound stream.
+    StreamAccept,
     /// Readiness for `stream_send` operation.
     StreamSend,
     /// Readiness for `stream_recv` operation.
