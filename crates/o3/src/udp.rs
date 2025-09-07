@@ -153,14 +153,14 @@ mod tests {
         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0).into()).unwrap();
         let mut socket = QuicSocket::new(socket, 1).unwrap();
 
+        let port = socket.local_addr().port();
+
         socket.sending.push_back((
             QuicBuf::from_slice(b"hello world").unwrap(),
-            socket.local_addr(),
+            (Ipv4Addr::LOCALHOST, port).into(),
         ));
 
         assert_eq!(socket.is_full(), true);
-
-        let port = socket.local_addr().port();
 
         assert_eq!(
             socket
