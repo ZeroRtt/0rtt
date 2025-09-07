@@ -160,11 +160,13 @@ mod tests {
 
         assert_eq!(socket.is_full(), true);
 
+        let port = socket.local_addr().port();
+
         assert_eq!(
             socket
                 .send_to(
                     QuicBuf::from_slice(b"hello world").unwrap(),
-                    socket.local_addr()
+                    (Ipv4Addr::LOCALHOST, port).into()
                 )
                 .unwrap(),
             0
@@ -195,11 +197,13 @@ mod tests {
 
         let mut socket = QuicSocket::new(socket, 1024).unwrap();
 
+        let port = socket.local_addr().port();
+
         assert_eq!(
             socket
                 .send_to(
                     QuicBuf::from_slice(b"hello world").unwrap(),
-                    socket.local_addr()
+                    (Ipv4Addr::LOCALHOST, port).into()
                 )
                 .unwrap(),
             0
