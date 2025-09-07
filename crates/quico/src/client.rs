@@ -15,7 +15,16 @@ impl Group {
     ) -> Result<Token> {
         let conn = quiche::connect(server_name, &random_conn_id(), local, peer, config)?;
 
-        self.register(conn)
+        let token = self.register(conn)?;
+
+        log::trace!(
+            "connect to server, token={:?}, local={}, peer={}",
+            token,
+            local,
+            peer
+        );
+
+        Ok(token)
     }
 }
 

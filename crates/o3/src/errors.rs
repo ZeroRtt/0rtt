@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 
-use crate::buf::QuicBuf;
+use crate::{buf::QuicBuf, token::Token};
 
 /// Error type used by `o3`.
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +20,25 @@ pub enum Error {
     /// Quic socket sending queue is full.
     #[error("Quic socket sending queue is full.")]
     IsFull(QuicBuf),
+
+    /// Port has reached its `end of file`
+    #[error("Port has reached its `end of file`, transferred={0}, id={1:?}")]
+    Fin(usize, Token),
+
+    /// Port mapping for the specified `token` is not found.
+    #[error("Port mapping is not found.")]
+    Mapping,
+}
+
+impl Error {
+    /// Check if error is `Fin` error.
+    pub fn is_fin(&self) -> Option<(usize, Token)> {
+        if let Error::Fin(len, token) = self {
+            Some((*len, *token))
+        } else {
+            None
+        }
+    }
 }
 
 impl From<std::io::Error> for Error {

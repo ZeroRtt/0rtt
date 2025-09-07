@@ -6,6 +6,10 @@
 pub mod cli;
 
 pub mod buf;
+pub mod connector;
 pub mod errors;
+pub mod mapping;
 pub mod poll;
+pub mod port;
+pub mod token;
 pub mod udp;

@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 
 /// Array backed buffer,with compile-time fixed capacity.
+#[derive(PartialEq)]
 pub struct ArrayBuf<const LEN: usize> {
     /// fixed array buffer.
     buf: Box<[u8; LEN]>,
@@ -17,6 +18,22 @@ impl<const LEN: usize> Debug for ArrayBuf<LEN> {
 }
 
 impl<const LEN: usize> ArrayBuf<LEN> {
+    /// Create array buf from slice.
+    ///
+    /// If the input slice is greater than buf capacity, returns `None`.
+    pub fn from_slice(src: &[u8]) -> Option<Self> {
+        if src.len() > LEN {
+            None
+        } else {
+            let mut buf = Self::new();
+
+            buf.writable_buf()[..src.len()].copy_from_slice(src);
+            buf.writable_consume(src.len());
+
+            Some(buf)
+        }
+    }
+
     /// Create a new ArrayBuf with default initialization data.
     pub fn new() -> Self {
         Self {

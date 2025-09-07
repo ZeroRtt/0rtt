@@ -65,17 +65,13 @@ impl BufPort {
 
         match self.port.read(unsafe { self.buf.writable_buf() }) {
             Ok(read_size) => {
-                if read_size > 0 {
-                    unsafe {
-                        self.buf.writable_consume(read_size);
-                    }
+                if read_size == 0 {
+                    return Err(Error::Fin(0, self.token()));
                 }
 
-                log::trace!(
-                    "read data from port, id={:?}, len={}",
-                    self.port.trace_id(),
-                    read_size
-                );
+                unsafe {
+                    self.buf.writable_consume(read_size);
+                }
 
                 Ok(read_size)
             }
@@ -83,67 +79,42 @@ impl BufPort {
         }
     }
 
-    fn transfer_from(&mut self, other: &mut BufPort) -> Result<usize> {
-        let mut send_size = 0;
+    fn transfer_to(&mut self, other: &mut BufPort) -> Result<usize> {
+        let mut total_send_size = 0;
 
         loop {
-            let mut broken_pipe = false;
+            while self.buf.readable() > 0 {
+                match other.port.write(unsafe { self.buf.readable_buf() }) {
+                    Ok(send_size) => {
+                        // the underlying object is no longer able to accept bytes
+                        if send_size == 0 {
+                            log::trace!(
+                                "transferred data, from={}, to={}, len={}, fin=true",
+                                self.port.trace_id(),
+                                other.port.trace_id(),
+                                total_send_size
+                            );
 
-            match other.read() {
-                Err(Error::Retry) => {}
-                Err(err) => return Err(err),
-                Ok(read_size) => broken_pipe = read_size == 0,
-            }
-
-            // no data to send.
-            if other.buf.readable() == 0 {
-                if broken_pipe {
-                    return Err(Error::BrokenPipe(send_size));
-                }
-
-                if send_size > 0 {
-                    return Ok(send_size);
-                }
-
-                log::trace!(
-                    "transfer data, from={}, to={}, source pending",
-                    other.port.trace_id(),
-                    self.port.trace_id(),
-                );
-
-                return Err(Error::Retry);
-            }
-
-            while other.buf.readable() > 0 {
-                match self.port.write(unsafe { other.buf.readable_buf() }) {
-                    Ok(write_size) => {
-                        if write_size > 0 {
-                            unsafe {
-                                other.buf.readable_consume(write_size);
-                            }
+                            return Err(Error::Fin(total_send_size, other.token()));
                         }
 
-                        log::trace!(
-                            "transfer data, from={}, to={}, len={}",
-                            other.port.trace_id(),
-                            self.port.trace_id(),
-                            write_size
-                        );
-
-                        send_size += write_size;
+                        total_send_size += send_size;
+                        unsafe { self.buf.readable_consume(send_size) };
                     }
                     Err(Error::Retry) => {
-                        if broken_pipe {
-                            return Err(Error::BrokenPipe(send_size));
-                        }
-
-                        if send_size > 0 {
-                            return Ok(send_size);
+                        if total_send_size > 0 {
+                            log::trace!(
+                                "transferred data, from={}, to={}, len={}",
+                                self.port.trace_id(),
+                                other.port.trace_id(),
+                                total_send_size
+                            );
+                            return Ok(total_send_size);
                         } else {
                             log::trace!(
-                                "transfer data, from={}, to={}, sink pending",
-                                other.port.trace_id(),
+                                "transferred data, from={}, to={}, pending",
                                 self.port.trace_id(),
+                                other.port.trace_id(),
                             );
                             return Err(Error::Retry);
                         }
@@ -151,11 +122,172 @@ impl BufPort {
                     Err(err) => return Err(err),
                 }
             }
+
+            match self.read() {
+                Ok(_) => {
+                    assert!(self.buf.readable() > 0);
+                }
+                Err(Error::Fin(_, token)) => {
+                    log::trace!(
+                        "transferred data, from={}, to={}, len={}, fin=true",
+                        self.port.trace_id(),
+                        other.port.trace_id(),
+                        total_send_size
+                    );
+
+                    return Err(Error::Fin(total_send_size, token));
+                }
+                Err(Error::Retry) => {
+                    if total_send_size > 0 {
+                        log::trace!(
+                            "transferred data, from={}, to={}, len={}",
+                            self.port.trace_id(),
+                            other.port.trace_id(),
+                            total_send_size
+                        );
+                        return Ok(total_send_size);
+                    } else {
+                        log::trace!(
+                            "transferred data, from={}, to={}, pending",
+                            self.port.trace_id(),
+                            other.port.trace_id(),
+                        );
+                        return Err(Error::Retry);
+                    }
+                }
+                Err(err) => return Err(err),
+            }
         }
     }
 }
 
 /// Copy data from `source` to `sink`.
 pub fn copy(source: &mut BufPort, sink: &mut BufPort) -> Result<usize> {
-    sink.transfer_from(source)
+    source.transfer_to(sink)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cmp;
+
+    use crate::{
+        poll::WouldBlock,
+        port::{BufPort, Port, copy},
+    };
+
+    struct MockReadRetry;
+
+    impl Port for MockReadRetry {
+        fn trace_id(&self) -> &str {
+            "MockRetry"
+        }
+
+        fn token(&self) -> crate::token::Token {
+            crate::token::Token::Mio(0)
+        }
+
+        fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {
+            Ok(buf.len())
+        }
+
+        fn read(&mut self, _: &mut [u8]) -> crate::errors::Result<usize> {
+            Err(crate::errors::Error::Retry)
+        }
+
+        fn close(&mut self) -> crate::errors::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct MockFin;
+
+    impl Port for MockFin {
+        fn trace_id(&self) -> &str {
+            "MockFin"
+        }
+
+        fn token(&self) -> crate::token::Token {
+            crate::token::Token::Mio(0)
+        }
+
+        fn write(&mut self, _: &[u8]) -> crate::errors::Result<usize> {
+            Ok(0)
+        }
+
+        fn read(&mut self, _: &mut [u8]) -> crate::errors::Result<usize> {
+            Ok(0)
+        }
+
+        fn close(&mut self) -> crate::errors::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct MockWriteRetry(usize, usize);
+
+    impl Port for MockWriteRetry {
+        fn trace_id(&self) -> &str {
+            "MockRetry"
+        }
+
+        fn token(&self) -> crate::token::Token {
+            crate::token::Token::Mio(0)
+        }
+
+        fn write(&mut self, _: &[u8]) -> crate::errors::Result<usize> {
+            Err(crate::errors::Error::Retry)
+        }
+
+        fn read(&mut self, buf: &mut [u8]) -> crate::errors::Result<usize> {
+            if self.0 >= self.1 {
+                return Ok(0);
+            }
+
+            let len = cmp::min(self.1 - self.0, buf.len());
+
+            self.0 += len;
+
+            Ok(len)
+        }
+
+        fn close(&mut self) -> crate::errors::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_retry() {
+        let mut from = BufPort::new(MockReadRetry, 11);
+
+        unsafe {
+            from.buf.writable_buf().copy_from_slice(b"01234567890");
+            from.buf.writable_consume(11);
+        }
+
+        let mut to = BufPort::new(MockReadRetry, 11);
+
+        assert_eq!(copy(&mut from, &mut to).ok(), Some(11));
+
+        assert!(copy(&mut from, &mut to).would_block().is_pending());
+
+        let mut from = BufPort::new(MockWriteRetry(0, 12), 11);
+
+        assert_eq!(
+            copy(&mut from, &mut to).expect_err("").is_fin(),
+            Some((12, crate::token::Token::Mio(0)))
+        );
+
+        let mut from = BufPort::new(MockWriteRetry(0, 12), 11);
+        let mut to = BufPort::new(MockWriteRetry(0, 12), 11);
+
+        assert!(copy(&mut from, &mut to).would_block().is_pending());
+
+        let mut from = BufPort::new(MockWriteRetry(0, 12), 11);
+        let mut to = BufPort::new(MockFin, 11);
+
+        assert_eq!(
+            copy(&mut from, &mut to).expect_err("").is_fin(),
+            Some((0, crate::token::Token::Mio(0)))
+        );
+    }
 }
