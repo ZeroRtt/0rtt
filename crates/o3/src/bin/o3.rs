@@ -32,7 +32,7 @@ fn run(cli: Cli) -> Result<()> {
             cli.parse_redirect_listen_addrs()?,
             target,
             Acceptor::new(config, SimpleAddressValidator::new(Duration::from_secs(60))),
-            1024 * 1024 * 10,
+            1024 * 1024,
         )?;
 
         rproxy.run()?;
