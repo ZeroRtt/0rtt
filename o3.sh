@@ -1,4 +1,4 @@
-RUST_LOG=trace \
+RUST_LOG=info \
 cargo run --release --no-default-features --features o3,cli \
 --bin o3 -p o3 -- \
 -d -p 1900 -c "./crates/quico/cert/server.crt" \

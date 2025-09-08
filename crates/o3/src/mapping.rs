@@ -20,7 +20,7 @@ pub struct Mapping {
 impl Mapping {
     /// Register a new mapping.
     pub fn register(&mut self, from: BufPort, to: BufPort) {
-        log::trace!(
+        log::info!(
             "register port mapping, from={}, to={}",
             from.trace_id(),
             to.trace_id()
@@ -62,49 +62,15 @@ impl Mapping {
         let mut source = self.get(&from).expect("from port");
         let mut sink = self.get(&to).expect("to port");
 
-        // match copy(&mut source, &mut sink) {
-        //     Err(Error::Fin(_, _)) => {
-        //         log::trace!(
-        //             "deregister port mapping, from={}, to={}",
-        //             source.trace_id(),
-        //             sink.trace_id()
-        //         );
-
-        //         if let Err(err) = source.close() {
-        //             log::error!("close port, id={}, err={}", source.trace_id(), err);
-        //         }
-
-        //         if let Err(err) = sink.close() {
-        //             log::error!("close port, id={}, err={}", source.trace_id(), err);
-        //         }
-
-        //         assert!(self.ports.remove(&from).is_some());
-        //         assert!(self.ports.remove(&to).is_some());
-
-        //         assert_eq!(self.mapping.remove(&from), Some(to));
-        //         assert_eq!(self.mapping.remove(&to), Some(from));
-
-        //         Ok(0)
-        //     }
-        //     r => r,
-        // }
-
         match copy(&mut source, &mut sink) {
             Err(Error::Retry) => Err(Error::Retry),
             Err(err) => {
-                log::trace!(
-                    "deregister port mapping, from={}, to={}, err={}",
-                    source.trace_id(),
-                    sink.trace_id(),
-                    err
-                );
-
                 if let Err(err) = source.close() {
-                    log::error!("close port, id={}, err={}", source.trace_id(), err);
+                    log::trace!("close port, id={}, err={}", source.trace_id(), err);
                 }
 
                 if let Err(err) = sink.close() {
-                    log::error!("close port, id={}, err={}", source.trace_id(), err);
+                    log::trace!("close port, id={}, err={}", source.trace_id(), err);
                 }
 
                 assert!(self.ports.remove(&from).is_some());
@@ -112,6 +78,14 @@ impl Mapping {
 
                 assert_eq!(self.mapping.remove(&from), Some(to));
                 assert_eq!(self.mapping.remove(&to), Some(from));
+
+                log::info!(
+                    "deregister port mapping, from={}, to={}, cause={}, ports={}",
+                    source.trace_id(),
+                    sink.trace_id(),
+                    err,
+                    self.ports.len()
+                );
 
                 Ok(0)
             }

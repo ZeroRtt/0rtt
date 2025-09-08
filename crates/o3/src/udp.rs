@@ -73,22 +73,21 @@ impl QuicSocket {
         while !self.sending.is_empty() {
             let (buf, target) = self.sending.front().unwrap();
 
-            log::trace!(
-                "quic socket send data, len={}, len={}, target={}",
-                buf.readable(),
-                buf.readable_buf().len(),
-                *target
-            );
-
             self.socket
                 .send_to(buf.readable_buf(), *target)
                 .inspect_err(|err| {
                     if err.kind() == ErrorKind::WouldBlock {
                         log::trace!("quic socket send data, pending");
                     } else {
-                        log::error!("quic socket send data, err={}", err);
+                        log::error!("quic socket send data, target={}, err={}", target, err);
                     }
                 })?;
+
+            log::trace!(
+                "quic socket send data, len={}, target={}",
+                buf.readable(),
+                *target
+            );
 
             self.sending.pop_front();
         }

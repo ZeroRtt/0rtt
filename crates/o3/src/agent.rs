@@ -2,6 +2,7 @@
 
 use std::{
     collections::VecDeque,
+    io::ErrorKind,
     net::{Ipv6Addr, SocketAddr},
     sync::Arc,
     task::Poll,
@@ -144,7 +145,9 @@ impl Agent {
 
         log::trace!("mio readiness, timeout={:?}", timeout);
 
-        self.poll.poll(&mut events, timeout)?;
+        self.poll
+            .poll(&mut events, timeout)
+            .inspect_err(|err| log::error!("mio poll error: {}", err))?;
 
         log::trace!("mio readiness, raised={}", events.iter().count());
 
@@ -195,11 +198,17 @@ impl Agent {
             let mut tcp_stream = self.pairing_tcp_streams.pop_front().unwrap();
             let token = self.next_mio_token();
 
-            self.poll.registry().register(
+            match self.poll.registry().register(
                 &mut tcp_stream,
                 token,
                 Interest::READABLE | Interest::WRITABLE,
-            )?;
+            ) {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("register tcp stream, err={}", err);
+                    continue;
+                }
+            }
 
             self.mapping.register(
                 BufPort::new(TcpStreamPort::new(tcp_stream, token), self.port_buffer_size),
@@ -285,7 +294,16 @@ impl Agent {
     }
 
     fn on_tcp_accept(&mut self) -> Result<()> {
-        let Poll::Ready((tcp_stream, from)) = self.tcp_listener.accept().would_block()? else {
+        let Poll::Ready((tcp_stream, from)) = self
+            .tcp_listener
+            .accept()
+            .inspect_err(|err| {
+                if err.kind() != ErrorKind::WouldBlock {
+                    log::error!("accept tcp stream, err={}", err);
+                }
+            })
+            .would_block()?
+        else {
             return Ok(());
         };
 
