@@ -5,11 +5,13 @@
 #[cfg_attr(docsrs, doc(cfg(feature = "cli")))]
 pub mod cli;
 
+pub mod agent;
 pub mod buf;
 pub mod connector;
 pub mod errors;
 pub mod mapping;
 pub mod poll;
 pub mod port;
+pub mod redirect;
 pub mod token;
 pub mod udp;

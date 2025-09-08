@@ -17,13 +17,6 @@ impl Group {
 
         let token = self.register(conn)?;
 
-        log::trace!(
-            "connect to server, token={:?}, local={}, peer={}",
-            token,
-            local,
-            peer
-        );
-
         Ok(token)
     }
 }

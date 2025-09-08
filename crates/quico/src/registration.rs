@@ -46,6 +46,12 @@ impl Registration {
                     .is_none()
             );
 
+            log::trace!(
+                "register quic connection, token={:?}, trace_id={}",
+                token,
+                conn.trace_id()
+            );
+
             self.conn_stats.insert(
                 token,
                 ConnState::new_with_readiness(token, conn, release_timer_threshold, readiness),

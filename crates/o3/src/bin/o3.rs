@@ -1,13 +1,13 @@
-use std::{io::Error, net::Ipv6Addr};
+use std::{io::Error, time::Duration};
 
 use clap::Parser;
 use color_print::ceprintln;
 use o3::{
-    agent::Agent,
     cli::{Cli, Commands},
     errors::Result,
+    redirect::Redirect,
 };
-use quico::quiche;
+use quico::{acceptor::Acceptor, quiche, validation::SimpleAddressValidator};
 
 fn main() {
     let cli = Cli::parse();
@@ -23,16 +23,19 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     #[allow(irrefutable_let_patterns)]
-    if let Commands::Listen { on } = cli.commands {
-        let on = on.unwrap_or_else(|| (Ipv6Addr::UNSPECIFIED, 0).into());
-
+    if let Commands::Redirect { target } = cli.commands {
         let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
 
         cli.quiche_config(&mut config)?;
 
-        let agent = Agent::new(on, cli.parse_o3_server_addrs()?, 1024 * 1024, config)?;
+        let rproxy = Redirect::new(
+            cli.parse_redirect_listen_addrs()?,
+            target,
+            Acceptor::new(config, SimpleAddressValidator::new(Duration::from_secs(60))),
+            1024 * 1024 * 10,
+        )?;
 
-        agent.run()?;
+        rproxy.run()?;
     }
 
     Ok(())

@@ -112,11 +112,24 @@ impl QuicConnector {
         }
     }
 
+    /// Returns local bound socket address.
+    #[inline]
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
     /// Register new established connection.
     pub fn register(&mut self, token: quico::Token) {
         log::trace!("Put `QUIC` connection {:?} into pool.", token);
 
-        assert!(!self.conns.insert(token));
+        assert!(self.conns.insert(token));
+    }
+
+    /// Deregister close connection.
+    pub fn deregister(&mut self, token: quico::Token) {
+        log::trace!("Remove `QUIC` connection {:?} into pool.", token);
+
+        self.conns.remove(&token);
     }
 
     /// Open a new outbound stream to target server.

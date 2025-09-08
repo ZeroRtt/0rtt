@@ -271,6 +271,7 @@ impl ConnState {
 
         if !self.is_established && conn.is_established() {
             self.is_established = true;
+
             if conn.is_server() {
                 readiness.insert(
                     Event {

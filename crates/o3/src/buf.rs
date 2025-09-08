@@ -93,5 +93,6 @@ mod tests {
 
         buf.writable_consume(1000);
         assert_eq!(buf.readable_buf(), &[0; 1000]);
+        assert_eq!(buf.readable_buf().len(), 1000);
     }
 }

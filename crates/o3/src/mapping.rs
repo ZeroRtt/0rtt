@@ -46,22 +46,18 @@ impl Mapping {
         self.ports.contains_key(&token.into())
     }
 
-    /// Try transfer data from port for the specified `token`.
+    /// Try transfer data between ports.
     /// this method will automatic deregister current port mapping,
     /// if [`Fin`](Error::Fin) error is raised by underlying object.
     ///
     /// When this method returns value `Ok(0)`, it indicates that the port mapping has been broken.
-    pub fn transfer<T>(&mut self, token: T) -> Result<usize>
+    pub fn transfer<F, T>(&mut self, from: F, to: T) -> Result<usize>
     where
+        F: Into<Token>,
         T: Into<Token>,
     {
-        let from = token.into();
-
-        let to = self
-            .mapping
-            .get(&from)
-            .cloned()
-            .ok_or_else(|| Error::Mapping)?;
+        let from = from.into();
+        let to = to.into();
 
         let mut source = self.get(&from).expect("from port");
         let mut sink = self.get(&to).expect("to port");
@@ -74,6 +70,17 @@ impl Mapping {
                     sink.trace_id()
                 );
 
+                if let Err(err) = source.close() {
+                    log::error!("close port, id={}, err={}", source.trace_id(), err);
+                }
+
+                if let Err(err) = sink.close() {
+                    log::error!("close port, id={}, err={}", source.trace_id(), err);
+                }
+
+                assert!(self.ports.remove(&from).is_some());
+                assert!(self.ports.remove(&to).is_some());
+
                 assert_eq!(self.mapping.remove(&from), Some(to));
                 assert_eq!(self.mapping.remove(&to), Some(from));
 
@@ -81,6 +88,46 @@ impl Mapping {
             }
             r => r,
         }
+    }
+
+    /// Try transfer data from port for the specified `token`.
+    /// this method will automatic deregister current port mapping,
+    /// if [`Fin`](Error::Fin) error is raised by underlying object.
+    ///
+    /// When this method returns value `Ok(0)`, it indicates that the port mapping has been broken.
+    pub fn transfer_from<T>(&mut self, token: T) -> Result<usize>
+    where
+        T: Into<Token>,
+    {
+        let from = token.into();
+
+        let to = self
+            .mapping
+            .get(&from)
+            .cloned()
+            .ok_or_else(|| Error::Mapping)?;
+
+        self.transfer(from, to)
+    }
+
+    /// Try transfer data to port for the specified `token`.
+    /// this method will automatic deregister current port mapping,
+    /// if [`Fin`](Error::Fin) error is raised by underlying object.
+    ///
+    /// When this method returns value `Ok(0)`, it indicates that the port mapping has been broken.
+    pub fn transfer_to<T>(&mut self, token: T) -> Result<usize>
+    where
+        T: Into<Token>,
+    {
+        let to = token.into();
+
+        let from = self
+            .mapping
+            .get(&to)
+            .cloned()
+            .ok_or_else(|| Error::Mapping)?;
+
+        self.transfer(from, to)
     }
 
     fn get(&self, token: &Token) -> Option<&'static mut BufPort> {

@@ -171,6 +171,7 @@ mod tests {
     use std::cmp;
 
     use crate::{
+        errors::Error,
         poll::WouldBlock,
         port::{BufPort, Port, copy},
     };
@@ -210,8 +211,8 @@ mod tests {
             crate::token::Token::Mio(0)
         }
 
-        fn write(&mut self, _: &[u8]) -> crate::errors::Result<usize> {
-            Ok(0)
+        fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {
+            Err(Error::Fin(buf.len(), self.token()))
         }
 
         fn read(&mut self, _: &mut [u8]) -> crate::errors::Result<usize> {
@@ -287,7 +288,7 @@ mod tests {
 
         assert_eq!(
             copy(&mut from, &mut to).expect_err("").is_fin(),
-            Some((0, crate::token::Token::Mio(0)))
+            Some((11, crate::token::Token::Mio(0)))
         );
     }
 }

@@ -82,7 +82,7 @@ pub struct Cli {
     verify_peer: Option<PathBuf>,
 
     /// set maximum transmission unit for UDP packets
-    #[arg(long, value_name = "STREAMS", default_value_t = 1350)]
+    #[arg(long, value_name = "STREAMS", default_value_t = 1200)]
     pub mtu: usize,
 
     /// Sets the initial_max_stream_data_bidi_remote transport parameter.

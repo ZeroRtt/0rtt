@@ -97,11 +97,7 @@ impl Readiness {
                 continue;
             }
 
-            if readiness.is_empty() {
-                return Some(deadline);
-            } else {
-                return None;
-            }
+            return Some(deadline);
         }
 
         return None;

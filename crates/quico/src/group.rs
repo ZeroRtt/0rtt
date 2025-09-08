@@ -112,7 +112,14 @@ impl Group {
     pub fn send(&self, token: Token, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
         let mut conn = self.lock_conn(token, LocKind::Send)?;
 
-        if release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD).is_some() {
+        if let Some(release_time) =
+            release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD)
+        {
+            log::trace!(
+                "connection send, scid={:?}, next_release_time={:?}",
+                conn.trace_id(),
+                release_time,
+            );
             return Err(Error::Retry);
         }
 
