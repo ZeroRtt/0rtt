@@ -194,21 +194,25 @@ impl ConnState {
         let conn = unsafe { self.as_mut() };
 
         if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Write, 0x0) {
-            log::error!(
-                "shutdown write, scid={:?}, stream_id={}, err={}",
-                conn.source_id(),
-                stream_id,
-                err
-            );
+            if err != quiche::Error::Done {
+                log::error!(
+                    "shutdown write, scid={:?}, stream_id={}, err={}",
+                    conn.source_id(),
+                    stream_id,
+                    err
+                );
+            }
         }
 
         if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, 0x0) {
-            log::error!(
-                "shutdown read, scid={:?}, stream_id={}, err={}",
-                conn.source_id(),
-                stream_id,
-                err
-            );
+            if err != quiche::Error::Done {
+                log::error!(
+                    "shutdown read, scid={:?}, stream_id={}, err={}",
+                    conn.source_id(),
+                    stream_id,
+                    err
+                );
+            }
         }
 
         self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
@@ -413,23 +417,27 @@ impl ConnState {
                 } => {
                     if shutdown_read {
                         if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, err) {
-                            log::error!(
-                                "shutdown read, scid={:?}, stream_id={}, err={}",
-                                conn.source_id(),
-                                stream_id,
-                                err
-                            );
+                            if err != quiche::Error::Done {
+                                log::error!(
+                                    "shutdown read, scid={:?}, stream_id={}, err={}",
+                                    conn.source_id(),
+                                    stream_id,
+                                    err
+                                );
+                            }
                         }
                     }
 
                     if shutdown_write {
                         if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Write, err) {
-                            log::error!(
-                                "shutdown write, scid={:?}, stream_id={}, err={}",
-                                conn.source_id(),
-                                stream_id,
-                                err
-                            );
+                            if err != quiche::Error::Done {
+                                log::error!(
+                                    "shutdown write, scid={:?}, stream_id={}, err={}",
+                                    conn.source_id(),
+                                    stream_id,
+                                    err
+                                );
+                            }
                         }
                     }
                 }

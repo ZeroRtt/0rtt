@@ -22,7 +22,7 @@ pub enum Error {
     IsFull(QuicBuf),
 
     /// Port has reached its `end of file`
-    #[error("Port has reached its `end of file`, transferred={0}, id={1:?}")]
+    #[error("Port({1:?}) has reached its `EOF`, trans={0}")]
     Fin(usize, Token),
 
     /// Port mapping for the specified `token` is not found.

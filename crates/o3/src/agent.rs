@@ -280,7 +280,7 @@ impl Agent {
     }
 
     fn on_quic_stream_open(&mut self, _: quico::Token) -> Result<()> {
-        log::trace!("on_quic_stream_open");
+        log::info!("on_quic_stream_open");
 
         self.make_port_mapping()
     }
@@ -294,7 +294,7 @@ impl Agent {
     }
 
     fn on_tcp_accept(&mut self) -> Result<()> {
-        let Poll::Ready((tcp_stream, from)) = self
+        let Poll::Ready(Ok((tcp_stream, from))) = self
             .tcp_listener
             .accept()
             .inspect_err(|err| {
@@ -302,7 +302,7 @@ impl Agent {
                     log::error!("accept tcp stream, err={}", err);
                 }
             })
-            .would_block()?
+            .would_block()
         else {
             return Ok(());
         };

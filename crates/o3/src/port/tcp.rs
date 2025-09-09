@@ -56,7 +56,7 @@ impl Port for TcpStreamPort {
             .shutdown(std::net::Shutdown::Both)
             .inspect_err(|err| {
                 if err.kind() != ErrorKind::WouldBlock {
-                    log::error!("{} shutdown, err={}", self.trace_id(), err)
+                    log::trace!("{} shutdown, err={}", self.trace_id(), err)
                 }
             })?;
         Ok(())
