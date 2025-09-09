@@ -45,7 +45,6 @@ impl SimpleAddressValidator {
     }
 }
 
-#[allow(unused)]
 impl AddressValidator for SimpleAddressValidator {
     fn mint_retry_token(
         &self,
@@ -87,7 +86,7 @@ impl AddressValidator for SimpleAddressValidator {
 
     fn validate_address<'a>(
         &self,
-        scid: &ConnectionId<'_>,
+        _: &ConnectionId<'_>,
         dcid: &ConnectionId<'_>,
         src: &SocketAddr,
         token: &'a [u8],

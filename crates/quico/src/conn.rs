@@ -509,7 +509,7 @@ impl ConnState {
         let now = Instant::now();
 
         // check if the connection has data to send.
-        let delay_to = delay_send(conn, now, release_timer_threshold);
+        let delay_to = delay_send(conn, now, release_timer_threshold, send_done);
 
         if send_done && delay_to.is_none() {
             readiness.remove(Event {

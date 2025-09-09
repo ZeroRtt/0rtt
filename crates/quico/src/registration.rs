@@ -7,7 +7,6 @@ use crate::{
     conn::{ConnGuard, ConnState, LocKind},
 };
 
-#[allow(unused)]
 #[derive(Default)]
 pub struct Registration {
     /// Id generator for local connection id.
@@ -20,7 +19,6 @@ pub struct Registration {
     readiness: UnsafeCell<Readiness>,
 }
 
-#[allow(unused)]
 impl Registration {
     /// Register and host `quiche::Connection`
     #[inline(always)]

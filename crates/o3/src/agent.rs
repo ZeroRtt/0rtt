@@ -114,6 +114,12 @@ impl Agent {
 
             let next_release_time = self.group.non_blocking_poll(&mut events);
 
+            log::trace!(
+                "quico readiness, raised={}, next_release_time={:?}",
+                events.len(),
+                next_release_time
+            );
+
             if events.is_empty() {
                 return Ok(next_release_time);
             }
@@ -273,13 +279,13 @@ impl Agent {
         Ok(())
     }
 
-    fn on_quic_connected(&mut self, _: quico::Token) -> Result<()> {
-        // self.quic_connector.register(token);
+    fn on_quic_connected(&mut self, token: quico::Token) -> Result<()> {
+        self.quic_connector.connected(token);
         self.make_port_mapping()
     }
 
     fn on_quic_closed(&mut self, token: quico::Token) -> Result<()> {
-        self.quic_connector.deregister(token);
+        self.quic_connector.closed(token);
         Ok(())
     }
 

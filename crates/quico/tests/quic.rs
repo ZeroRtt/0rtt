@@ -5,7 +5,6 @@ use quico::{
     Error, EventKind, Group, Token, acceptor::Acceptor, validation::SimpleAddressValidator,
 };
 
-#[allow(unused)]
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
 

@@ -99,6 +99,8 @@ pub struct QuicConnector {
     max_pool_size: usize,
     /// active `QUIC` connections.
     conns: HashSet<quico::Token>,
+    /// handshaking connections.
+    handshaking_conns: HashSet<quico::Token>,
     /// shared `QUIC` configuration.
     config: quiche::Config,
 }
@@ -117,6 +119,7 @@ impl QuicConnector {
             local_addr,
             targets,
             conns: Default::default(),
+            handshaking_conns: Default::default(),
             config,
         }
     }
@@ -127,18 +130,21 @@ impl QuicConnector {
         self.local_addr
     }
 
-    // /// Register new established connection.
-    // pub fn register(&mut self, token: quico::Token) {
-    //     log::info!("Put `QUIC` connection {:?} into pool.", token);
+    /// Register new established connection.
+    pub fn connected(&mut self, token: quico::Token) {
+        log::info!("put `QUIC` connection {:?}.", token);
 
-    //     assert!(self.conns.insert(token));
-    // }
+        assert!(self.handshaking_conns.remove(&token));
+        assert!(self.conns.insert(token));
+    }
 
     /// Deregister close connection.
-    pub fn deregister(&mut self, token: quico::Token) {
-        log::info!("Remove `QUIC` connection {:?} into pool.", token);
+    pub fn closed(&mut self, token: quico::Token) {
+        log::info!("remove `QUIC` connection {:?}.", token);
 
-        self.conns.remove(&token);
+        if !self.handshaking_conns.remove(&token) {
+            self.conns.remove(&token);
+        }
     }
 
     /// Open a new outbound stream to target server.
@@ -158,16 +164,16 @@ impl QuicConnector {
             }
         }
 
-        if self.conns.len() < self.max_pool_size {
+        if self.conns.len() + self.handshaking_conns.len() < self.max_pool_size {
             // Create new `QUIC` connection.
 
             self.targets.shuffle(&mut rand::rng());
 
             let token = group.connect(None, self.local_addr, self.targets[0], &mut self.config)?;
 
-            log::info!("Put `QUIC` connection {:?} into pool.", token);
+            log::info!("`QUIC` connect to {}, token={:?}", self.targets[0], token);
 
-            self.conns.insert(token);
+            self.handshaking_conns.insert(token);
         }
 
         Poll::Pending
