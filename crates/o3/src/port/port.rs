@@ -23,6 +23,9 @@ pub trait Port {
 
     /// Close this port.
     fn close(&mut self) -> Result<()>;
+
+    /// Return the length of data already sent (in bytes).
+    fn sent(&self) -> u64;
 }
 
 /// A port with reading buffer.
@@ -38,6 +41,12 @@ impl BufPort {
             port: Box::new(port),
             buf: RingBuf::with_capacity(buf_size),
         }
+    }
+
+    /// Return the length of data already sent (in bytes).
+    #[inline]
+    pub fn sent(&self) -> u64 {
+        self.port.sent()
     }
 
     /// Returns this port's debug label string.
@@ -198,6 +207,10 @@ mod tests {
         fn close(&mut self) -> crate::errors::Result<()> {
             Ok(())
         }
+
+        fn sent(&self) -> u64 {
+            todo!()
+        }
     }
 
     struct MockFin;
@@ -221,6 +234,10 @@ mod tests {
 
         fn close(&mut self) -> crate::errors::Result<()> {
             Ok(())
+        }
+
+        fn sent(&self) -> u64 {
+            todo!()
         }
     }
 
@@ -253,6 +270,10 @@ mod tests {
 
         fn close(&mut self) -> crate::errors::Result<()> {
             Ok(())
+        }
+
+        fn sent(&self) -> u64 {
+            todo!()
         }
     }
 

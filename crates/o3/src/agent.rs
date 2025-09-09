@@ -31,6 +31,8 @@ static UDP_SOCKET_TOKEN: mio::Token = mio::Token(1);
 
 /// Forward agent, passes tcp traffic through quic tunnel.
 pub struct Agent {
+    /// max pairing tcp streams.
+    max_pairing_tcp_streams: usize,
     /// Buffered port buffer size.
     port_buffer_size: usize,
     /// local token generator.
@@ -58,6 +60,7 @@ impl Agent {
         o3_server_addrs: Vec<SocketAddr>,
         config: quiche::Config,
         port_buffer_size: usize,
+        max_pairing_tcp_streams: usize,
     ) -> Result<Self> {
         let poll = mio::Poll::new()?;
 
@@ -81,6 +84,7 @@ impl Agent {
         let group = quico::Group::new();
 
         Ok(Self {
+            max_pairing_tcp_streams,
             port_buffer_size,
             mio_token_next: 2,
             poll,
@@ -294,22 +298,36 @@ impl Agent {
     }
 
     fn on_tcp_accept(&mut self) -> Result<()> {
-        let Poll::Ready(Ok((tcp_stream, from))) = self
-            .tcp_listener
-            .accept()
-            .inspect_err(|err| {
-                if err.kind() != ErrorKind::WouldBlock {
-                    log::error!("accept tcp stream, err={}", err);
-                }
-            })
-            .would_block()
-        else {
-            return Ok(());
-        };
+        loop {
+            let Poll::Ready(Ok((tcp_stream, from))) = self
+                .tcp_listener
+                .accept()
+                .inspect_err(|err| {
+                    if err.kind() != ErrorKind::WouldBlock {
+                        log::error!(
+                            "accept tcp stream, pairings={}, err={}",
+                            self.pairing_tcp_streams.len(),
+                            err
+                        );
+                    }
+                })
+                .would_block()
+            else {
+                break;
+            };
 
-        log::trace!("Accept new tcp stream, {}", from);
+            if self.pairing_tcp_streams.len() == self.max_pairing_tcp_streams {
+                self.pairing_tcp_streams.pop_front();
+            }
 
-        self.pairing_tcp_streams.push_back(tcp_stream);
+            self.pairing_tcp_streams.push_back(tcp_stream);
+
+            log::info!(
+                "Accept new tcp stream, from={}, pairings={}",
+                from,
+                self.pairing_tcp_streams.len()
+            );
+        }
 
         self.make_port_mapping()
     }

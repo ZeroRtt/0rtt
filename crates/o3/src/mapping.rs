@@ -1,6 +1,6 @@
 //! Utilities for port mapping.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::UnsafeCell, collections::HashMap};
 
 use crate::{
     errors::{Error, Result},
@@ -12,7 +12,7 @@ use crate::{
 #[derive(Default)]
 pub struct Mapping {
     /// Register ports.
-    ports: HashMap<Token, Rc<RefCell<BufPort>>>,
+    ports: HashMap<Token, UnsafeCell<BufPort>>,
     /// bidirection port mapping.
     mapping: HashMap<Token, Token>,
 }
@@ -32,14 +32,10 @@ impl Mapping {
 
         assert!(
             self.ports
-                .insert(from.token(), Rc::new(RefCell::new(from)))
+                .insert(from.token(), UnsafeCell::new(from))
                 .is_none()
         );
-        assert!(
-            self.ports
-                .insert(to.token(), Rc::new(RefCell::new(to)))
-                .is_none()
-        );
+        assert!(self.ports.insert(to.token(), UnsafeCell::new(to)).is_none());
     }
 
     /// Returns true if the `Mapping` contains a port for the specified `token`.
@@ -64,24 +60,22 @@ impl Mapping {
         let from = from.into();
         let to = to.into();
 
-        let source = self.ports.get(&from).cloned().expect("from port");
-        let sink = self.ports.get(&to).cloned().expect("to port");
+        let source = self.get(&from).expect("from port");
+        let sink = self.get(&to).expect("to port");
 
-        let mut source = source.borrow_mut();
-        let mut sink = sink.borrow_mut();
-
-        match copy(&mut source, &mut sink) {
+        match copy(source, sink) {
             Err(Error::Retry) => Err(Error::Retry),
-            Err(err) => {
+            Err(_) => {
                 _ = source.close();
                 _ = sink.close();
 
                 log::info!(
-                    "deregister port mapping, from={}, to={}, ports={}, cause={}",
+                    "deregister port mapping, from={}, to={}, sent={}, recv={}, ports={}",
                     source.trace_id(),
                     sink.trace_id(),
+                    source.sent(),
+                    sink.sent(),
                     self.ports.len() - 2,
-                    err,
                 );
 
                 assert!(self.ports.remove(&from).is_some());
@@ -136,11 +130,11 @@ impl Mapping {
         self.transfer(from, to)
     }
 
-    // fn get(&self, token: &Token) -> Option<&'static mut BufPort> {
-    //     unsafe {
-    //         self.ports
-    //             .get(token)
-    //             .map(|port| port.get().as_mut().unwrap())
-    //     }
-    // }
+    fn get(&self, token: &Token) -> Option<&'static mut BufPort> {
+        unsafe {
+            self.ports
+                .get(token)
+                .map(|port| port.get().as_mut().unwrap())
+        }
+    }
 }

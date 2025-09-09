@@ -10,6 +10,7 @@ pub struct QuicStreamPort {
     conn_id: quico::Token,
     stream_id: u64,
     group: Arc<Group>,
+    sent: u64,
 }
 
 impl QuicStreamPort {
@@ -20,6 +21,7 @@ impl QuicStreamPort {
             conn_id,
             stream_id,
             group,
+            sent: 0,
         }
     }
 }
@@ -27,6 +29,10 @@ impl QuicStreamPort {
 impl Port for QuicStreamPort {
     fn trace_id(&self) -> &str {
         &self.trace_id
+    }
+
+    fn sent(&self) -> u64 {
+        self.sent
     }
 
     fn token(&self) -> crate::token::Token {
@@ -37,6 +43,8 @@ impl Port for QuicStreamPort {
         let write_size = self
             .group
             .stream_send(self.conn_id, self.stream_id, buf, false)?;
+
+        self.sent += write_size as u64;
 
         Ok(write_size)
     }

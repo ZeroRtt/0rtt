@@ -1,4 +1,4 @@
-use std::{backtrace, io::ErrorKind};
+use std::io::ErrorKind;
 
 use crate::{buf::QuicBuf, token::Token};
 
@@ -6,8 +6,8 @@ use crate::{buf::QuicBuf, token::Token};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Unhandled `std::io::Error`
-    #[error("{0:?} {1}")]
-    Io(std::io::Error, String),
+    #[error(transparent)]
+    Io(std::io::Error),
 
     /// Unhandled `quico::Error`
     #[error(transparent)]
@@ -45,7 +45,7 @@ impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
             ErrorKind::WouldBlock => Self::Retry,
-            _ => Self::Io(value, format!("{:?}", backtrace::Backtrace::capture())),
+            _ => Self::Io(value),
         }
     }
 }

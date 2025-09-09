@@ -9,6 +9,7 @@ pub struct TcpStreamPort {
     token: Token,
     trace_id: String,
     stream: TcpStream,
+    sent: u64,
 }
 
 impl TcpStreamPort {
@@ -18,6 +19,7 @@ impl TcpStreamPort {
             trace_id: format!("TCP({:?})", token),
             token: Token::Mio(token.0),
             stream,
+            sent: 0,
         }
     }
 }
@@ -31,12 +33,18 @@ impl Port for TcpStreamPort {
         self.token
     }
 
+    fn sent(&self) -> u64 {
+        self.sent
+    }
+
     fn write(&mut self, buf: &[u8]) -> crate::errors::Result<usize> {
         let write_size = self.stream.write(buf).inspect_err(|err| {
             if err.kind() != ErrorKind::WouldBlock {
                 log::error!("{} write data, err={}", self.trace_id(), err)
             }
         })?;
+
+        self.sent += write_size as u64;
 
         Ok(write_size)
     }

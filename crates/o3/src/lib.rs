@@ -5,13 +5,20 @@
 #[cfg_attr(docsrs, doc(cfg(feature = "cli")))]
 pub mod cli;
 
+#[cfg(feature = "agent")]
+#[cfg_attr(docsrs, doc(cfg(feature = "agent")))]
 pub mod agent;
-pub mod buf;
+
+#[cfg(feature = "o3")]
+#[cfg_attr(docsrs, doc(cfg(feature = "o3")))]
+pub mod redirect;
+
 pub mod connector;
 pub mod errors;
-pub mod mapping;
-pub mod poll;
-pub mod port;
-pub mod redirect;
-pub mod token;
 pub mod udp;
+
+mod buf;
+mod mapping;
+mod poll;
+mod port;
+mod token;
