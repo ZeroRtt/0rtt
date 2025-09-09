@@ -95,6 +95,8 @@ pub struct QuicConnector {
     local_addr: SocketAddr,
     /// connect to the specified addresses.
     targets: Vec<SocketAddr>,
+    /// Max size of `QUIC` conection pool.
+    max_pool_size: usize,
     /// active `QUIC` connections.
     conns: HashSet<quico::Token>,
     /// shared `QUIC` configuration.
@@ -103,8 +105,15 @@ pub struct QuicConnector {
 
 impl QuicConnector {
     /// Create a new `QuicConnector` with target address list.
-    pub fn new(local_addr: SocketAddr, targets: Vec<SocketAddr>, config: quiche::Config) -> Self {
+    pub fn new(
+        local_addr: SocketAddr,
+        targets: Vec<SocketAddr>,
+        config: quiche::Config,
+        max_pool_size: usize,
+    ) -> Self {
+        assert!(max_pool_size > 0, "Invalid `max_pool_size` value.");
         Self {
+            max_pool_size,
             local_addr,
             targets,
             conns: Default::default(),
@@ -118,16 +127,16 @@ impl QuicConnector {
         self.local_addr
     }
 
-    /// Register new established connection.
-    pub fn register(&mut self, token: quico::Token) {
-        log::trace!("Put `QUIC` connection {:?} into pool.", token);
+    // /// Register new established connection.
+    // pub fn register(&mut self, token: quico::Token) {
+    //     log::info!("Put `QUIC` connection {:?} into pool.", token);
 
-        assert!(self.conns.insert(token));
-    }
+    //     assert!(self.conns.insert(token));
+    // }
 
     /// Deregister close connection.
     pub fn deregister(&mut self, token: quico::Token) {
-        log::trace!("Remove `QUIC` connection {:?} into pool.", token);
+        log::info!("Remove `QUIC` connection {:?} into pool.", token);
 
         self.conns.remove(&token);
     }
@@ -149,11 +158,17 @@ impl QuicConnector {
             }
         }
 
-        // Create new `QUIC` connection.
+        if self.conns.len() < self.max_pool_size {
+            // Create new `QUIC` connection.
 
-        self.targets.shuffle(&mut rand::rng());
+            self.targets.shuffle(&mut rand::rng());
 
-        group.connect(None, self.local_addr, self.targets[0], &mut self.config)?;
+            let token = group.connect(None, self.local_addr, self.targets[0], &mut self.config)?;
+
+            log::info!("Put `QUIC` connection {:?} into pool.", token);
+
+            self.conns.insert(token);
+        }
 
         Poll::Pending
     }

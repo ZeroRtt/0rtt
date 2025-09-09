@@ -92,7 +92,7 @@ impl Agent {
             quic_socket: QuicSocket::new(udp_socket, 1024)?,
             pairing_tcp_streams: Default::default(),
             group: Arc::new(group),
-            quic_connector: QuicConnector::new(local_addr, o3_server_addrs, config),
+            quic_connector: QuicConnector::new(local_addr, o3_server_addrs, config, 1),
             mapping: Default::default(),
         })
     }
@@ -273,8 +273,8 @@ impl Agent {
         Ok(())
     }
 
-    fn on_quic_connected(&mut self, token: quico::Token) -> Result<()> {
-        self.quic_connector.register(token);
+    fn on_quic_connected(&mut self, _: quico::Token) -> Result<()> {
+        // self.quic_connector.register(token);
         self.make_port_mapping()
     }
 
