@@ -82,7 +82,7 @@ pub struct Cli {
     verify_peer: Option<PathBuf>,
 
     /// set maximum transmission unit for UDP packets
-    #[arg(long, value_name = "STREAMS", default_value_t = 1330)]
+    #[arg(long, value_name = "STREAMS", default_value_t = 1200)]
     pub mtu: usize,
 
     /// Sets the initial_max_stream_data_bidi_remote transport parameter.
@@ -121,7 +121,7 @@ pub struct Cli {
     pub io_timer_tick_interval: u64,
 
     /// Set the ring buffer size for channel data copying
-    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 10)]
+    #[arg(long, value_name = "SIZE", default_value_t = 4096)]
     pub ring_buffer_size: usize,
 
     /// Set maximum incoming queue

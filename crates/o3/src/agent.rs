@@ -182,13 +182,8 @@ impl Agent {
                     continue;
                 }
 
-                if event.is_readable() {
-                    self.on_transfer_from(token)?;
-                }
-
-                if event.is_writable() {
-                    self.on_transfer_to(token)?;
-                }
+                self.on_transfer_from(token)?;
+                self.on_transfer_to(token)?;
             }
         }
 
@@ -229,8 +224,8 @@ impl Agent {
             );
 
             // transfer data
-            _ = self.on_transfer_from(token)?;
-            _ = self.on_transfer_to(token)?;
+            // _ = self.on_transfer_from(token)?;
+            // _ = self.on_transfer_to(token)?;
         }
 
         Ok(())
