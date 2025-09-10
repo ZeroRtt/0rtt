@@ -24,6 +24,15 @@ impl TcpStreamPort {
     }
 }
 
+impl Drop for TcpStreamPort {
+    fn drop(&mut self) {
+        _ = self
+            .stream
+            .shutdown(std::net::Shutdown::Both)
+            .inspect_err(|err| log::info!("{} shutdown, err={}", self.trace_id(), err));
+    }
+}
+
 impl Port for TcpStreamPort {
     fn trace_id(&self) -> &str {
         &self.trace_id
@@ -59,14 +68,10 @@ impl Port for TcpStreamPort {
         Ok(read_size)
     }
 
-    fn close(&mut self) -> crate::errors::Result<()> {
+    fn fin(&mut self) -> crate::errors::Result<()> {
         self.stream
-            .shutdown(std::net::Shutdown::Both)
-            .inspect_err(|err| {
-                if err.kind() != ErrorKind::WouldBlock {
-                    log::trace!("{} shutdown, err={}", self.trace_id(), err)
-                }
-            })?;
+            .shutdown(std::net::Shutdown::Write)
+            .inspect_err(|err| log::info!("{} shutdown, err={}", self.trace_id(), err))?;
         Ok(())
     }
 }

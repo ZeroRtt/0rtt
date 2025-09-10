@@ -65,10 +65,32 @@ impl Mapping {
 
         match copy(source, sink) {
             Err(Error::Retry) => Err(Error::Retry),
-            Err(_) => {
-                _ = source.close();
-                _ = sink.close();
+            Err(Error::Fin(transferred, token)) => {
+                self.mapping.remove(&from);
 
+                if !self.mapping.contains_key(&to) {
+                    log::info!(
+                        "deregister port mapping, from={}, to={}, sent={}, recv={}, ports={}",
+                        source.trace_id(),
+                        sink.trace_id(),
+                        source.sent(),
+                        sink.sent(),
+                        self.ports.len() - 2,
+                    );
+
+                    assert!(self.ports.remove(&from).is_some());
+                    assert!(self.ports.remove(&to).is_some());
+
+                    return Ok(transferred);
+                }
+
+                if token != to {
+                    _ = sink.fin();
+                }
+
+                Ok(transferred)
+            }
+            Err(_) => {
                 log::info!(
                     "deregister port mapping, from={}, to={}, sent={}, recv={}, ports={}",
                     source.trace_id(),
@@ -81,8 +103,8 @@ impl Mapping {
                 assert!(self.ports.remove(&from).is_some());
                 assert!(self.ports.remove(&to).is_some());
 
-                assert_eq!(self.mapping.remove(&from), Some(to));
-                assert_eq!(self.mapping.remove(&to), Some(from));
+                self.mapping.remove(&from);
+                self.mapping.remove(&to);
 
                 Ok(0)
             }
