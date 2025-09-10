@@ -63,6 +63,7 @@ impl BufPort {
 
     /// Close this port.
     #[inline]
+    #[allow(unused)]
     pub fn fin(&mut self) -> Result<()> {
         self.port.fin()
     }

@@ -121,7 +121,7 @@ pub struct Cli {
     pub io_timer_tick_interval: u64,
 
     /// Set the ring buffer size for channel data copying
-    #[arg(long, value_name = "SIZE", default_value_t = 1330 * 30)]
+    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 10)]
     pub ring_buffer_size: usize,
 
     /// Set maximum incoming queue

@@ -29,7 +29,7 @@ impl Drop for TcpStreamPort {
         _ = self
             .stream
             .shutdown(std::net::Shutdown::Both)
-            .inspect_err(|err| log::info!("{} shutdown, err={}", self.trace_id(), err));
+            .inspect_err(|err| log::trace!("{} shutdown, err={}", self.trace_id(), err));
     }
 }
 
@@ -71,7 +71,7 @@ impl Port for TcpStreamPort {
     fn fin(&mut self) -> crate::errors::Result<()> {
         self.stream
             .shutdown(std::net::Shutdown::Write)
-            .inspect_err(|err| log::info!("{} shutdown, err={}", self.trace_id(), err))?;
+            .inspect_err(|err| log::trace!("{} shutdown, err={}", self.trace_id(), err))?;
         Ok(())
     }
 }
