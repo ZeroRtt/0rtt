@@ -30,7 +30,13 @@ fn run(cli: Cli) -> Result<()> {
 
         cli.quiche_config(&mut config)?;
 
-        let agent = Agent::new(on, cli.parse_o3_server_addrs()?, config, 1024 * 3, 30)?;
+        let agent = Agent::new(
+            on,
+            cli.parse_o3_server_addrs()?,
+            config,
+            cli.ring_buffer_size,
+            cli.pairing_stream_limits,
+        )?;
 
         agent.run()?;
     }

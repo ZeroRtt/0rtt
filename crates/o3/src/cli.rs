@@ -120,6 +120,14 @@ pub struct Cli {
     #[arg(long, value_name = "INTERVAL", default_value_t = 20)]
     pub io_timer_tick_interval: u64,
 
+    /// Set the ring buffer size for channel data copying
+    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 3)]
+    pub ring_buffer_size: usize,
+
+    /// Set maximum incoming queue
+    #[arg(long, value_name = "SIZE", default_value_t = 30)]
+    pub pairing_stream_limits: usize,
+
     /// Debug mode, print verbose output informations.
     #[arg(short, long, default_value_t = false, action)]
     pub debug: bool,
