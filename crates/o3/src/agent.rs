@@ -227,6 +227,9 @@ impl Agent {
                     self.port_buffer_size,
                 ),
             );
+
+            // try recv data first.
+            _ = self.on_transfer_from(token)?;
         }
 
         Ok(())

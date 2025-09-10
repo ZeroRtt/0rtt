@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.1] - 2025-09-10
+
+- Fix quic `release_time` bug.
+
 ## [0.1.1] - 2025-09-09
 
 - Fix quic `release_time` bug.
