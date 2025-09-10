@@ -7,7 +7,7 @@ use mio::{event::Source, net::UdpSocket};
 use crate::{
     buf::QuicBuf,
     errors::{Error, Result},
-    poll::WouldBlock,
+    would_block::WouldBlock,
 };
 
 /// Udp socket for quic protocol.

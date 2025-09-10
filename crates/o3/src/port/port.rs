@@ -181,8 +181,8 @@ mod tests {
 
     use crate::{
         errors::Error,
-        poll::WouldBlock,
         port::{BufPort, Port, copy},
+        would_block::WouldBlock,
     };
 
     struct MockReadRetry;

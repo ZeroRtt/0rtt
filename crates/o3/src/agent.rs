@@ -20,10 +20,10 @@ use crate::{
     connector::QuicConnector,
     errors::{Error, Result},
     mapping::Mapping,
-    poll::WouldBlock,
     port::{BufPort, QuicStreamPort, TcpStreamPort},
     token::Token,
     udp::QuicSocket,
+    would_block::WouldBlock,
 };
 
 static TCP_LISTENER_TOKEN: mio::Token = mio::Token(0);
@@ -200,7 +200,7 @@ impl Agent {
     fn make_port_mapping(&mut self) -> Result<()> {
         while !self.pairing_tcp_streams.is_empty() {
             let Poll::Ready(Ok((conn_id, stream_id))) =
-                self.quic_connector.stream_open(&self.group)
+                self.quic_connector.stream_open(&self.group).would_block()
             else {
                 return Ok(());
             };

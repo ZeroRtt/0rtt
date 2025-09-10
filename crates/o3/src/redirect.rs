@@ -14,10 +14,10 @@ use crate::{
     connector::TcpConnector,
     errors::{Error, Result},
     mapping::Mapping,
-    poll::WouldBlock,
     port::{BufPort, QuicStreamPort, TcpStreamPort},
     token::Token,
     udp::QuicSocket,
+    would_block::WouldBlock,
 };
 
 /// Redirect all inbound quic traffic to target server via tcp tunnels.

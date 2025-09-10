@@ -461,6 +461,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fd99930f64d146689264c637b5af2f0233a933bef0d8570e2526bf9e083192d"
 
 [[package]]
+name = "fixedbuf"
+version = "0.1.0"
+
+[[package]]
 name = "flate2"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -859,6 +863,7 @@ version = "0.1.2"
 dependencies = [
  "clap",
  "color-print",
+ "fixedbuf",
  "libc",
  "log",
  "mio",
