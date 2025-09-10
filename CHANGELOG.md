@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.3] - 2025-09-10
+
+- o3: add more command line parameters.
+
 ## [0.1.2] - 2025-09-10
 
 - o3: Once the pipeline has been established, execute a data transfer immediately.

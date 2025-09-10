@@ -228,8 +228,9 @@ impl Agent {
                 ),
             );
 
-            // try recv data first.
+            // transfer data
             _ = self.on_transfer_from(token)?;
+            _ = self.on_transfer_to(token)?;
         }
 
         Ok(())

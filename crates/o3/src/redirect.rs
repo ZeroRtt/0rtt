@@ -230,7 +230,8 @@ impl Redirect {
         );
 
         // try send data.
-        _ = self.on_transfer_from((conn_id, stream_id))?;
+        _ = self.on_transfer_to(token)?;
+        _ = self.on_transfer_from(token)?;
 
         Ok(())
     }
