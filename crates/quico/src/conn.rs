@@ -462,7 +462,7 @@ impl ConnState {
             self.retries.insert(LocKind::StreamOpen);
         }
 
-        while let Some(stream_id) = conn.stream_writable_next() {
+        for stream_id in conn.writable() {
             readiness.insert(
                 Event {
                     kind: EventKind::StreamSend,
@@ -475,7 +475,7 @@ impl ConnState {
             );
         }
 
-        while let Some(stream_id) = conn.stream_readable_next() {
+        for stream_id in conn.readable() {
             if is_bidi(stream_id)
                 && !is_local(stream_id, conn.is_server())
                 && self.inbound_stream_id_current < stream_id

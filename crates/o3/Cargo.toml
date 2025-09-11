@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 name = "o3"
 repository = "https://github.com/ZeroRtt/ZeroRtt/crates/ringbuff"
-version = "0.1.8"
+version = "0.1.9"
 
 [dependencies]
 mio = { version = "^1", features = ["net", "os-poll"] }
