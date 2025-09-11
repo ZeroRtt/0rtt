@@ -66,6 +66,9 @@ impl Mapping {
         match copy(source, sink) {
             Err(Error::Retry) => Err(Error::Retry),
             Err(_) => {
+                _ = source.close();
+                _ = sink.close();
+
                 log::info!(
                     "deregister port mapping, from={}, to={}, sent={}, recv={}, ports={}",
                     source.trace_id(),

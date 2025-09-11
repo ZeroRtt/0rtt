@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.7] - 2025-09-11
+
+- o3: port remove `fin` fn and add `close` fn.
+
 ## [0.1.6] - 2025-09-11
 
 - quico: Try fix `Connector` bug.

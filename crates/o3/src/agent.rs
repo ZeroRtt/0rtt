@@ -182,8 +182,13 @@ impl Agent {
                     continue;
                 }
 
-                self.on_transfer_from(token)?;
-                self.on_transfer_to(token)?;
+                if event.is_readable() {
+                    self.on_transfer_from(token)?;
+                }
+
+                if event.is_writable() {
+                    self.on_transfer_to(token)?;
+                }
             }
         }
 

@@ -26,12 +26,6 @@ impl QuicStreamPort {
     }
 }
 
-impl Drop for QuicStreamPort {
-    fn drop(&mut self) {
-        _ = self.group.stream_close(self.conn_id, self.stream_id);
-    }
-}
-
 impl Port for QuicStreamPort {
     fn trace_id(&self) -> &str {
         &self.trace_id
@@ -65,9 +59,8 @@ impl Port for QuicStreamPort {
         }
     }
 
-    fn fin(&mut self) -> crate::errors::Result<()> {
-        self.group
-            .stream_send(self.conn_id, self.stream_id, b"", true)?;
+    fn close(&mut self) -> crate::errors::Result<()> {
+        _ = self.group.stream_close(self.conn_id, self.stream_id);
 
         Ok(())
     }

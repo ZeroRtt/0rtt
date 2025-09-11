@@ -22,7 +22,7 @@ pub trait Port {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
     /// Shutdown port write.
-    fn fin(&mut self) -> Result<()>;
+    fn close(&mut self) -> Result<()>;
 
     /// Return the length of data already sent (in bytes).
     fn sent(&self) -> u64;
@@ -63,9 +63,8 @@ impl BufPort {
 
     /// Close this port.
     #[inline]
-    #[allow(unused)]
-    pub fn fin(&mut self) -> Result<()> {
-        self.port.fin()
+    pub fn close(&mut self) -> Result<()> {
+        self.port.close()
     }
 
     fn read(&mut self) -> Result<usize> {
@@ -98,7 +97,7 @@ impl BufPort {
                     Ok(send_size) => {
                         // the underlying object is no longer able to accept bytes
                         if send_size == 0 {
-                            log::info!(
+                            log::trace!(
                                 "transferred data, from={}, to={}, len={}, fin=true",
                                 self.port.trace_id(),
                                 other.port.trace_id(),
@@ -138,7 +137,7 @@ impl BufPort {
                     assert!(self.buf.readable() > 0);
                 }
                 Err(Error::Fin(_, token)) => {
-                    log::info!(
+                    log::trace!(
                         "transferred data, from={}, to={}, len={}, fin=true",
                         self.port.trace_id(),
                         other.port.trace_id(),
@@ -205,7 +204,7 @@ mod tests {
             Err(crate::errors::Error::Retry)
         }
 
-        fn fin(&mut self) -> crate::errors::Result<()> {
+        fn close(&mut self) -> crate::errors::Result<()> {
             Ok(())
         }
 
@@ -233,7 +232,7 @@ mod tests {
             Ok(0)
         }
 
-        fn fin(&mut self) -> crate::errors::Result<()> {
+        fn close(&mut self) -> crate::errors::Result<()> {
             Ok(())
         }
 
@@ -269,7 +268,7 @@ mod tests {
             Ok(len)
         }
 
-        fn fin(&mut self) -> crate::errors::Result<()> {
+        fn close(&mut self) -> crate::errors::Result<()> {
             Ok(())
         }
 
