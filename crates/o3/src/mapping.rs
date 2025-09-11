@@ -87,7 +87,7 @@ impl Mapping {
                 Ok(0)
             }
             Ok(transferred) => {
-                log::info!(
+                log::trace!(
                     "transfer data, from={}, to={}, len={}",
                     source.trace_id(),
                     sink.trace_id(),
@@ -109,11 +109,10 @@ impl Mapping {
     {
         let from = token.into();
 
-        let to = self
-            .mapping
-            .get(&from)
-            .cloned()
-            .ok_or_else(|| Error::Mapping)?;
+        let to = self.mapping.get(&from).cloned().ok_or_else(|| {
+            log::error!("Unknown sink for {:?}", from);
+            Error::Mapping
+        })?;
 
         self.transfer(from, to)
     }
@@ -129,11 +128,10 @@ impl Mapping {
     {
         let to = token.into();
 
-        let from = self
-            .mapping
-            .get(&to)
-            .cloned()
-            .ok_or_else(|| Error::Mapping)?;
+        let from = self.mapping.get(&to).cloned().ok_or_else(|| {
+            log::error!("Unknown source for {:?}", to);
+            Error::Mapping
+        })?;
 
         self.transfer(from, to)
     }

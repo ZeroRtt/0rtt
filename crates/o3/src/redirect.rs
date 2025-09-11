@@ -229,6 +229,9 @@ impl Redirect {
             BufPort::new(TcpStreamPort::new(tcp_stream, token), self.port_buffer_size),
         );
 
+        self.on_transfer_from((conn_id, stream_id))?;
+        self.on_transfer_to((conn_id, stream_id))?;
+
         Ok(())
     }
 }
