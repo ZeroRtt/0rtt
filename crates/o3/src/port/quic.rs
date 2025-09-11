@@ -60,7 +60,7 @@ impl Port for QuicStreamPort {
     }
 
     fn close(&mut self) -> crate::errors::Result<()> {
-        _ = self.group.stream_close(self.conn_id, self.stream_id);
+        self.group.stream_close(self.conn_id, self.stream_id)?;
 
         Ok(())
     }

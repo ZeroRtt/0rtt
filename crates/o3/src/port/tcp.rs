@@ -24,15 +24,6 @@ impl TcpStreamPort {
     }
 }
 
-impl Drop for TcpStreamPort {
-    fn drop(&mut self) {
-        _ = self
-            .stream
-            .shutdown(std::net::Shutdown::Both)
-            .inspect_err(|err| log::info!("{} shutdown, err={}", self.trace_id(), err));
-    }
-}
-
 impl Port for TcpStreamPort {
     fn trace_id(&self) -> &str {
         &self.trace_id

@@ -1,20 +1,19 @@
 //!  Fixed-size buffers, useful for network protocols.
 
-#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-extern crate alloc;
+use std::fmt::Debug;
 
 /// Array backed buffer,with compile-time fixed capacity.
 #[derive(PartialEq)]
 pub struct ArrayBuf<const LEN: usize> {
     /// fixed array buffer.
-    buf: alloc::boxed::Box<[u8; LEN]>,
+    buf: Box<[u8; LEN]>,
     /// written data length.
     len: usize,
 }
 
-impl<const LEN: usize> core::fmt::Debug for ArrayBuf<LEN> {
+impl<const LEN: usize> Debug for ArrayBuf<LEN> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "ArrayBuf[{}]", LEN)
     }
@@ -40,7 +39,7 @@ impl<const LEN: usize> ArrayBuf<LEN> {
     /// Create a new ArrayBuf with default initialization data.
     pub fn new() -> Self {
         Self {
-            buf: alloc::boxed::Box::new([0; LEN]),
+            buf: Box::new([0; LEN]),
             len: 0,
         }
     }
