@@ -87,7 +87,7 @@ impl Mapping {
                 Ok(0)
             }
             Ok(transferred) => {
-                log::trace!(
+                log::info!(
                     "transfer data, from={}, to={}, len={}",
                     source.trace_id(),
                     sink.trace_id(),
