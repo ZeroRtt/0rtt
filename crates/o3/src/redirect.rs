@@ -229,10 +229,6 @@ impl Redirect {
             BufPort::new(TcpStreamPort::new(tcp_stream, token), self.port_buffer_size),
         );
 
-        // try send data.
-        _ = self.on_transfer_to(token)?;
-        _ = self.on_transfer_from(token)?;
-
         Ok(())
     }
 }

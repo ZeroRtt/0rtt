@@ -90,7 +90,7 @@ impl Connector {
         for conn_id in conns {
             match group.stream_open(conn_id) {
                 Ok(stream_id) => return Ok((conn_id, stream_id)),
-                Err(err @ Error::Busy) | Err(err @ Error::Retry) => return Err(err),
+                Err(Error::Busy) | Err(Error::Retry) => {}
                 Err(_) => {
                     log::info!("Remove quic connection {:?}", conn_id);
                     self.conns.remove(&conn_id);

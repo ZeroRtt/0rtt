@@ -222,10 +222,6 @@ impl Agent {
                     self.port_buffer_size,
                 ),
             );
-
-            // transfer data
-            // _ = self.on_transfer_from(token)?;
-            // _ = self.on_transfer_to(token)?;
         }
 
         Ok(())

@@ -66,7 +66,6 @@ impl Mapping {
         match copy(source, sink) {
             Err(Error::Retry) => Err(Error::Retry),
             Err(_) => {
-                _ = copy(sink, source);
                 log::info!(
                     "deregister port mapping, from={}, to={}, sent={}, recv={}, ports={}",
                     source.trace_id(),
@@ -79,8 +78,8 @@ impl Mapping {
                 assert!(self.ports.remove(&from).is_some());
                 assert!(self.ports.remove(&to).is_some());
 
-                self.mapping.remove(&from);
-                self.mapping.remove(&to);
+                assert_eq!(self.mapping.remove(&from), Some(to));
+                assert_eq!(self.mapping.remove(&to), Some(from));
 
                 Ok(0)
             }
