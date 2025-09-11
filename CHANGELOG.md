@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.11] - 2025-09-11
+
+- rollback v0.1.9
+
 ## [0.1.10] - 2025-09-11
 
 - o3: Once the pipeline has been established, execute a data transfer immediately.

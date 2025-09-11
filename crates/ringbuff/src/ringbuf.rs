@@ -342,4 +342,31 @@ mod tests {
         assert_eq!(ringbuf.writable(), 7);
         assert_eq!(ringbuf.readable(), 4);
     }
+
+    #[test]
+    fn test_boundary_condition() {
+        let mut ringbuf = RingBuf::with_capacity(1024 * 3);
+
+        unsafe {
+            ringbuf.writable_consume(1024 * 3);
+
+            assert_eq!(ringbuf.readable(), 1024 * 3);
+
+            assert_eq!(ringbuf.writable(), 0);
+
+            ringbuf.readable_consume(3);
+
+            assert_eq!(ringbuf.writable(), 3);
+        }
+
+        let mut ringbuf = RingBuf::with_capacity(1024 * 3);
+
+        unsafe {
+            ringbuf.writable_consume(1024 * 3 - 1);
+
+            assert_eq!(ringbuf.readable(), 1024 * 3 - 1);
+
+            assert_eq!(ringbuf.writable(), 1);
+        }
+    }
 }
