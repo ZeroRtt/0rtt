@@ -94,7 +94,7 @@ pub struct Cli {
     ///
     /// When set to zero, either explicitly or via the default, quiche will not give any flow control
     /// to the peer, preventing it from sending any stream data.
-    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 1024)]
+    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 1024 * 4)]
     pub initial_max_stream_data: u64,
 
     /// Sets the max_idle_timeout transport parameter, in milliseconds.
@@ -116,12 +116,8 @@ pub struct Cli {
     #[arg(long, value_name = "STREAMS", default_value_t = 100)]
     pub initial_max_streams: u64,
 
-    /// Set the io timer tick interval, in milliseconds.
-    #[arg(long, value_name = "INTERVAL", default_value_t = 20)]
-    pub io_timer_tick_interval: u64,
-
     /// Set the ring buffer size for channel data copying
-    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 1024)]
+    #[arg(long, value_name = "SIZE", default_value_t = 1024 * 4)]
     pub ring_buffer_size: usize,
 
     /// Set maximum incoming queue
