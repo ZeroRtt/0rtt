@@ -161,15 +161,21 @@ impl Agent {
             None
         };
 
-        log::trace!("mio readiness, timeout={:?}", timeout);
-
         self.poll
             .poll(&mut events, timeout)
             .inspect_err(|err| log::error!("mio poll error: {}", err))?;
 
+        log::trace!(
+            "mio readiness, raised={}, timeout={:?}",
+            events.iter().count(),
+            timeout,
+        );
+
         let mut count = 0;
 
         for event in events.iter() {
+            log::trace!("readiness, event={:?}", event);
+
             count += 1;
 
             let token = event.token();

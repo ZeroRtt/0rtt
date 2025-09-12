@@ -3,4 +3,4 @@
 use fixedbuf::ArrayBuf;
 
 /// Fixed-length buffer for quic protocol.
-pub type QuicBuf = ArrayBuf<1330>;
+pub type QuicBuf = ArrayBuf<1600>;
