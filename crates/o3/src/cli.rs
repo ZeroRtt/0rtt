@@ -85,7 +85,7 @@ pub struct Cli {
     #[arg(long, value_name = "STREAMS", default_value_t = 1200)]
     pub mtu: usize,
 
-    /// set the congestion control algorithm. available list: `cubic`, `reno`, `bbr`, `bbr2` and `bbr2_gcongestion`
+    /// set the congestion control algorithm. availables: `cubic`, `reno`, `bbr`, `bbr2` and `bbr2_gcongestion`
     #[arg(long, value_name = "algorithem", default_value = "cubic")]
     pub cc: String,
 
