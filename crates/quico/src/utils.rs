@@ -45,18 +45,18 @@ pub(crate) fn delay_send(
     release_time
 }
 
-pub(crate) fn release_time(
-    conn: &quiche::Connection,
-    now: Instant,
-    release_timer_threshold: Duration,
-) -> Option<Instant> {
-    // check with `release_timer_threshold`
-    conn.get_next_release_time()
-        .and_then(|release| release.time(now))
-        .filter(|time| {
-            time.checked_duration_since(now).unwrap_or_default() > release_timer_threshold
-        })
-}
+// pub(crate) fn release_time(
+//     conn: &quiche::Connection,
+//     now: Instant,
+//     release_timer_threshold: Duration,
+// ) -> Option<Instant> {
+//     // check with `release_timer_threshold`
+//     conn.get_next_release_time()
+//         .and_then(|release| release.time(now))
+//         .filter(|time| {
+//             time.checked_duration_since(now).unwrap_or_default() > release_timer_threshold
+//         })
+// }
 
 /// Create an new random [`ConnectionId`]
 pub(crate) fn random_conn_id() -> ConnectionId<'static> {

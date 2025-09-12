@@ -19,7 +19,7 @@ pub mod udp;
 
 mod buf;
 mod mapping;
-mod mertics;
+mod metrics;
 mod port;
 mod registry;
 mod token;

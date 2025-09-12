@@ -14,6 +14,7 @@ use crate::{
     connector::TcpConnector,
     errors::{Error, Result},
     mapping::Mapping,
+    metrics::Metrics,
     port::{BufPort, QuicStreamPort, TcpStreamPort},
     token::Token,
     udp::QuicSocket,
@@ -42,6 +43,8 @@ pub struct Redirect {
     tcp_connector: TcpConnector,
     /// router for quic traffic.
     mapping: Mapping,
+    /// Metrics information collector.
+    metrics: Metrics,
 }
 
 impl Redirect {
@@ -88,6 +91,7 @@ impl Redirect {
             quic_socket_addrs,
             mapping: Default::default(),
             tcp_connector: TcpConnector::new(vec![target]),
+            metrics: Default::default(),
         })
     }
 
@@ -97,6 +101,8 @@ impl Redirect {
             let next_release_time = self.quico_poll_once()?;
 
             self.mio_poll_once(next_release_time)?;
+
+            self.metrics.report();
         }
     }
 }
@@ -107,6 +113,8 @@ impl Redirect {
             let mut events = vec![];
 
             let next_release_time = self.group.non_blocking_poll(&mut events);
+
+            self.metrics.qucio_poll_add(events.len());
 
             if events.is_empty() {
                 return Ok(next_release_time);
@@ -152,9 +160,11 @@ impl Redirect {
 
         self.poll.poll(&mut events, timeout)?;
 
-        log::trace!("mio readiness, raised={}", events.iter().count());
+        let mut count = 0;
 
         for event in events.iter() {
+            count += 1;
+
             let token = event.token();
 
             // for udp sockets.
@@ -187,6 +197,8 @@ impl Redirect {
                 }
             }
         }
+
+        self.metrics.mio_poll_add(count);
 
         Ok(())
     }
@@ -339,7 +351,7 @@ impl Redirect {
     where
         T: Into<Token>,
     {
-        _ = self.mapping.transfer_from(token);
+        _ = self.mapping.transfer_from(token, &mut self.metrics);
 
         Ok(())
     }
@@ -348,7 +360,7 @@ impl Redirect {
     where
         T: Into<Token>,
     {
-        _ = self.mapping.transfer_to(token);
+        _ = self.mapping.transfer_to(token, &mut self.metrics);
 
         Ok(())
     }

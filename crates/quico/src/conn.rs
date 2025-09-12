@@ -533,6 +533,10 @@ impl ConnState {
             },
             delay_to,
         );
+
+        while let Some(event) = conn.path_event_next() {
+            log::info!("{:?}, id={:?}", event, self.id);
+        }
     }
 
     /// Careful use this function.

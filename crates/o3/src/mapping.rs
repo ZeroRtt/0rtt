@@ -4,6 +4,7 @@ use std::{cell::UnsafeCell, collections::HashMap};
 
 use crate::{
     errors::{Error, Result},
+    metrics::Metrics,
     port::{BufPort, copy},
     registry::QuicRegistry,
     token::Token,
@@ -88,7 +89,7 @@ impl Mapping {
     /// if [`Fin`](Error::Fin) error is raised by underlying object.
     ///
     /// When this method returns value `Ok(0)`, it indicates that the port mapping has been broken.
-    pub fn transfer<F, T>(&mut self, from: F, to: T) -> Result<usize>
+    pub fn transfer<F, T>(&mut self, from: F, to: T, metrics: &mut Metrics) -> Result<usize>
     where
         F: Into<Token>,
         T: Into<Token>,
@@ -131,12 +132,8 @@ impl Mapping {
                 Ok(0)
             }
             Ok(transferred) => {
-                log::trace!(
-                    "transfer data, from={}, to={}, len={}",
-                    source.trace_id(),
-                    sink.trace_id(),
-                    transferred
-                );
+                metrics.traffic_add(from, to, transferred);
+
                 Ok(transferred)
             }
         }
@@ -147,7 +144,7 @@ impl Mapping {
     /// if [`Fin`](Error::Fin) error is raised by underlying object.
     ///
     /// When this method returns value `Ok(0)`, it indicates that the port mapping has been broken.
-    pub fn transfer_from<T>(&mut self, token: T) -> Result<usize>
+    pub fn transfer_from<T>(&mut self, token: T, metrics: &mut Metrics) -> Result<usize>
     where
         T: Into<Token>,
     {
@@ -159,7 +156,7 @@ impl Mapping {
             .cloned()
             .ok_or_else(|| Error::Mapping)?;
 
-        self.transfer(from, to)
+        self.transfer(from, to, metrics)
     }
 
     /// Try transfer data to port for the specified `token`.
@@ -167,7 +164,7 @@ impl Mapping {
     /// if [`Fin`](Error::Fin) error is raised by underlying object.
     ///
     /// When this method returns value `Ok(0)`, it indicates that the port mapping has been broken.
-    pub fn transfer_to<T>(&mut self, token: T) -> Result<usize>
+    pub fn transfer_to<T>(&mut self, token: T, metrics: &mut Metrics) -> Result<usize>
     where
         T: Into<Token>,
     {
@@ -179,7 +176,7 @@ impl Mapping {
             .cloned()
             .ok_or_else(|| Error::Mapping)?;
 
-        self.transfer(from, to)
+        self.transfer(from, to, metrics)
     }
 
     fn get(&self, token: &Token) -> Option<&'static mut BufPort> {

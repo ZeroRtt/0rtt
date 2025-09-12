@@ -7,10 +7,7 @@ use parking_lot::{Condvar, Mutex};
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
 use crate::{
-    Error, Event, Result, Token,
-    conn::LocKind,
-    registration::Registration,
-    utils::{min_of_some, release_time},
+    Error, Event, Result, Token, conn::LocKind, registration::Registration, utils::min_of_some,
 };
 
 static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
@@ -111,17 +108,6 @@ impl Group {
     /// Writes a single QUIC packet to be sent to the peer.
     pub fn send(&self, token: Token, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
         let mut conn = self.lock_conn(token, LocKind::Send)?;
-
-        if let Some(release_time) =
-            release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD)
-        {
-            log::trace!(
-                "connection send, scid={:?}, next_release_time={:?}",
-                conn.trace_id(),
-                release_time,
-            );
-            return Err(Error::Retry);
-        }
 
         // TODO: prevent frequent calls to on_timeout
         conn.on_timeout();

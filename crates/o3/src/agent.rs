@@ -20,6 +20,7 @@ use crate::{
     connector::QuicConnector,
     errors::{Error, Result},
     mapping::Mapping,
+    metrics::Metrics,
     port::{BufPort, QuicStreamPort, TcpStreamPort},
     token::Token,
     udp::QuicSocket,
@@ -51,6 +52,8 @@ pub struct Agent {
     quic_connector: QuicConnector,
     /// bidirectional data pipelines.
     mapping: Mapping,
+    /// Metrics collector.
+    meterics: Metrics,
 }
 
 impl Agent {
@@ -94,6 +97,7 @@ impl Agent {
             group: Arc::new(group),
             quic_connector: QuicConnector::new(local_addr, o3_server_addrs, config, 1),
             mapping: Default::default(),
+            meterics: Default::default(),
         })
     }
 
@@ -103,6 +107,8 @@ impl Agent {
             let next_release_time = self.quico_poll_once()?;
 
             self.mio_poll_once(next_release_time)?;
+
+            self.meterics.report();
         }
     }
 }
@@ -119,6 +125,8 @@ impl Agent {
                 events.len(),
                 next_release_time
             );
+
+            self.meterics.qucio_poll_add(events.len());
 
             if events.is_empty() {
                 return Ok(next_release_time);
@@ -159,9 +167,11 @@ impl Agent {
             .poll(&mut events, timeout)
             .inspect_err(|err| log::error!("mio poll error: {}", err))?;
 
-        log::trace!("mio readiness, raised={}", events.iter().count());
+        let mut count = 0;
 
         for event in events.iter() {
+            count += 1;
+
             let token = event.token();
 
             if token == TCP_LISTENER_TOKEN {
@@ -191,6 +201,8 @@ impl Agent {
                 }
             }
         }
+
+        self.meterics.mio_poll_add(count);
 
         Ok(())
     }
@@ -372,7 +384,7 @@ impl Agent {
     where
         T: Into<Token>,
     {
-        _ = self.mapping.transfer_from(token);
+        _ = self.mapping.transfer_from(token, &mut self.meterics);
 
         Ok(())
     }
@@ -381,7 +393,7 @@ impl Agent {
     where
         T: Into<Token>,
     {
-        _ = self.mapping.transfer_to(token);
+        _ = self.mapping.transfer_to(token, &mut self.meterics);
 
         Ok(())
     }
