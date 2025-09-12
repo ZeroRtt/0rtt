@@ -289,6 +289,7 @@ impl Agent {
 
     fn on_quic_closed(&mut self, token: quico::Token) -> Result<()> {
         self.quic_connector.closed(token);
+        self.mapping.on_quic_closed(token);
         Ok(())
     }
 

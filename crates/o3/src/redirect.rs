@@ -122,6 +122,7 @@ impl Redirect {
                     }
                     quico::EventKind::Closed => {
                         log::info!("Quic connection closed, {:?}", event.token);
+                        self.mapping.on_quic_closed(event.token);
                     }
                     quico::EventKind::StreamOpen => unreachable!("Redirect"),
                     quico::EventKind::StreamSend => {

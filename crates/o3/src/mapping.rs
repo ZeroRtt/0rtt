@@ -5,6 +5,7 @@ use std::{cell::UnsafeCell, collections::HashMap};
 use crate::{
     errors::{Error, Result},
     port::{BufPort, copy},
+    registry::QuicRegistry,
     token::Token,
 };
 
@@ -15,6 +16,8 @@ pub struct Mapping {
     ports: HashMap<Token, UnsafeCell<BufPort>>,
     /// bidirection port mapping.
     mapping: HashMap<Token, Token>,
+    /// Registry for quic streams.
+    quic_registry: QuicRegistry,
 }
 
 impl Mapping {
@@ -27,6 +30,12 @@ impl Mapping {
             self.ports.len() + 2
         );
 
+        if let Token::QuicStream(token, stream_id) = from.token() {
+            self.quic_registry.register(quico::Token(token), stream_id);
+        } else if let Token::QuicStream(token, stream_id) = to.token() {
+            self.quic_registry.register(quico::Token(token), stream_id);
+        }
+
         assert!(self.mapping.insert(from.token(), to.token()).is_none());
         assert!(self.mapping.insert(to.token(), from.token()).is_none());
 
@@ -36,6 +45,33 @@ impl Mapping {
                 .is_none()
         );
         assert!(self.ports.insert(to.token(), UnsafeCell::new(to)).is_none());
+    }
+
+    pub fn on_quic_closed(&mut self, token: quico::Token) {
+        if let Some(streams) = self.quic_registry.close(token) {
+            for stream_id in streams {
+                let from = Token::QuicStream(token.0, stream_id);
+                let to = self.mapping.get(&from).copied().unwrap();
+
+                let source = self.get(&from).expect("from port");
+                let sink = self.get(&to).expect("to port");
+
+                log::info!(
+                    "deregister port mapping, from={}, to={}, sent={}, recv={}, ports={}",
+                    source.trace_id(),
+                    sink.trace_id(),
+                    source.sent(),
+                    sink.sent(),
+                    self.ports.len() - 2,
+                );
+
+                assert!(self.ports.remove(&from).is_some());
+                assert!(self.ports.remove(&to).is_some());
+
+                assert_eq!(self.mapping.remove(&from), Some(to));
+                assert_eq!(self.mapping.remove(&to), Some(from));
+            }
+        }
     }
 
     /// Returns true if the `Mapping` contains a port for the specified `token`.
@@ -84,10 +120,18 @@ impl Mapping {
                 assert_eq!(self.mapping.remove(&from), Some(to));
                 assert_eq!(self.mapping.remove(&to), Some(from));
 
+                if let Token::QuicStream(token, stream_id) = from {
+                    self.quic_registry
+                        .deregister(quico::Token(token), stream_id);
+                } else if let Token::QuicStream(token, stream_id) = to {
+                    self.quic_registry
+                        .deregister(quico::Token(token), stream_id);
+                }
+
                 Ok(0)
             }
             Ok(transferred) => {
-                log::info!(
+                log::trace!(
                     "transfer data, from={}, to={}, len={}",
                     source.trace_id(),
                     sink.trace_id(),
@@ -109,10 +153,11 @@ impl Mapping {
     {
         let from = token.into();
 
-        let to = self.mapping.get(&from).cloned().ok_or_else(|| {
-            log::error!("Unknown sink for {:?}", from);
-            Error::Mapping
-        })?;
+        let to = self
+            .mapping
+            .get(&from)
+            .cloned()
+            .ok_or_else(|| Error::Mapping)?;
 
         self.transfer(from, to)
     }
@@ -128,10 +173,11 @@ impl Mapping {
     {
         let to = token.into();
 
-        let from = self.mapping.get(&to).cloned().ok_or_else(|| {
-            log::error!("Unknown source for {:?}", to);
-            Error::Mapping
-        })?;
+        let from = self
+            .mapping
+            .get(&to)
+            .cloned()
+            .ok_or_else(|| Error::Mapping)?;
 
         self.transfer(from, to)
     }

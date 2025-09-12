@@ -19,6 +19,8 @@ pub mod udp;
 
 mod buf;
 mod mapping;
+mod mertics;
 mod port;
+mod registry;
 mod token;
 mod would_block;
