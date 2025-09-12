@@ -85,6 +85,10 @@ pub struct Cli {
     #[arg(long, value_name = "STREAMS", default_value_t = 1200)]
     pub mtu: usize,
 
+    /// set the congestion control algorithm. available list: `cubic`, `reno`, `bbr`, `bbr2` and `bbr2_gcongestion`
+    #[arg(long, value_name = "algorithem", default_value = "cubic")]
+    pub cc: String,
+
     /// Sets the initial_max_stream_data_bidi_remote transport parameter.
     ///
     /// When set to a non-zero value quiche will only allow at most v bytes of incoming stream data
@@ -188,6 +192,9 @@ impl Cli {
         config.set_max_ack_delay(self.max_ack_delay);
         config.set_ack_delay_exponent(self.ack_frequency_exponent);
         config.set_max_send_udp_payload_size(self.mtu);
+        config
+            .set_cc_algorithm_name(&self.cc)
+            .map_err(Error::other)?;
 
         if let Some(cert) = &self.cert {
             config

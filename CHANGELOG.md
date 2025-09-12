@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.14] - 2025-09-13
+
+- o3/cli: new option `cc`, set the congestion control algorithm with it.
+
 ## [0.1.13] - 2025-09-12
 
 - o3: add `send` gcongestion.

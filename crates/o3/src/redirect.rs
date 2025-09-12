@@ -156,9 +156,13 @@ impl Redirect {
             None
         };
 
-        log::trace!("mio readiness, timeout={:?}", timeout);
-
         self.poll.poll(&mut events, timeout)?;
+
+        log::trace!(
+            "mio readiness, raised={}, timeout={:?}",
+            events.iter().count(),
+            timeout
+        );
 
         let mut count = 0;
 
@@ -179,6 +183,7 @@ impl Redirect {
             } else {
                 if self.tcp_connector.is_connecting(&token) {
                     self.make_port_mapping(token)?;
+                    continue;
                 }
 
                 if !self.mapping.contains_port(token) {
