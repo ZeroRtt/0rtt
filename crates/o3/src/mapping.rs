@@ -132,6 +132,13 @@ impl Mapping {
                 Ok(0)
             }
             Ok(transferred) => {
+                log::trace!(
+                    "from={}, to={}, transfered={}",
+                    source.trace_id(),
+                    sink.trace_id(),
+                    transferred,
+                );
+
                 metrics.traffic_add(from, to, transferred);
 
                 Ok(transferred)
