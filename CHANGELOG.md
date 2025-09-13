@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.15] - 2025-09-13
+
+- o3/cli: change default values: `--cc`=bbr, `--mtu`=12000, `--max-ack-delay`=30
+
 ## [0.1.14] - 2025-09-13
 
 - o3/cli: new option `cc`, set the congestion control algorithm with it.

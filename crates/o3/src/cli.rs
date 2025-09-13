@@ -86,7 +86,7 @@ pub struct Cli {
     pub mtu: usize,
 
     /// set the congestion control algorithm. availables: `cubic`, `reno`, `bbr`, `bbr2` and `bbr2_gcongestion`
-    #[arg(long, value_name = "algorithem", default_value = "cubic")]
+    #[arg(long, value_name = "algorithem", default_value = "bbr")]
     pub cc: String,
 
     /// Sets the initial_max_stream_data_bidi_remote transport parameter.
@@ -106,7 +106,7 @@ pub struct Cli {
     pub max_idle_timeout: u64,
 
     /// Sets the `max_ack_delay` transport parameter, in milliseconds.
-    #[arg(long, value_name = "SIZE", default_value_t = 25)]
+    #[arg(long, value_name = "SIZE", default_value_t = 30)]
     pub max_ack_delay: u64,
 
     /// Sets the ack_delay_exponent transport parameter.
