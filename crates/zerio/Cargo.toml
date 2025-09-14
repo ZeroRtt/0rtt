@@ -1,0 +1,12 @@
+[package]
+description = "Concurrent I/O beyond rust async runtime based on reactor pattern."
+documentation = "https://docs.rs/zerio"
+edition = "2024"
+license = "MIT"
+name = "zerio"
+repository = "https://github.com/ZeroRtt/ZeroRtt/zerio"
+version = "0.1.0"
+
+[dependencies]
+log = { version = "^0.4" }
+thiserror = "^2.0"
