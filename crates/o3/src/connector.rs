@@ -84,4 +84,4 @@ impl TcpConnector {
     }
 }
 
-pub type QuicConnector = quico::client::Connector;
+pub type QuicConnector = zrquic::Connector;

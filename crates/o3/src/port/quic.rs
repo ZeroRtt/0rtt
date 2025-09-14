@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use quico::Group;
+use zrquic::Group;
 
 use crate::{errors::Error, port::Port, token::Token};
 
 /// Port for `QuicStream`
 pub struct QuicStreamPort {
     trace_id: String,
-    conn_id: quico::Token,
+    conn_id: zrquic::Token,
     stream_id: u64,
     group: Arc<Group>,
     sent: u64,
@@ -15,7 +15,7 @@ pub struct QuicStreamPort {
 
 impl QuicStreamPort {
     /// Create a new port for quic stream.
-    pub fn new(group: Arc<Group>, conn_id: quico::Token, stream_id: u64) -> Self {
+    pub fn new(group: Arc<Group>, conn_id: zrquic::Token, stream_id: u64) -> Self {
         Self {
             trace_id: format!("QUIC({},{})", conn_id.0, stream_id),
             conn_id,

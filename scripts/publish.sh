@@ -1,1 +1,1 @@
-cargo publish --manifest-path ../crates/quico/Cargo.toml --registry crates-io
+cargo publish --manifest-path ../crates/quic/Cargo.toml --registry crates-io

@@ -1,10 +1,10 @@
 [package]
-description = "quico: A poll system with `quiche` for massive quiche connections."
-documentation = "https://docs.rs/quico"
+description = "zrquic: A poll system with `quiche` for massive quiche connections."
+documentation = "https://docs.rs/zrquic"
 edition = "2024"
 license = "MIT"
-name = "quico"
-repository = "https://github.com/ZeroRtt/ZeroRtt/quico"
+name = "zrquic"
+repository = "https://github.com/ZeroRtt/ZeroRtt/zrquic"
 version = "0.1.2"
 
 [dependencies]

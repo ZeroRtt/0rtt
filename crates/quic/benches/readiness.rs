@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use divan::Bencher;
-use quico::{Event, EventKind, Readiness, Token};
+use zrquic::{Event, EventKind, Readiness, Token};
 
 fn main() {
     divan::main();

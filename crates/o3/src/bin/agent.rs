@@ -7,7 +7,7 @@ use o3::{
     cli::{Cli, Commands},
     errors::Result,
 };
-use quico::quiche;
+use zrquic::quiche;
 
 fn main() {
     let cli = Cli::parse();

@@ -22,12 +22,12 @@ impl<T> WouldBlock<T> for Result<T, std::io::Error> {
     }
 }
 
-impl<T> WouldBlock<T> for Result<T, quico::Error> {
-    type Error = quico::Error;
+impl<T> WouldBlock<T> for Result<T, zrquic::Error> {
+    type Error = zrquic::Error;
 
     fn would_block(self) -> Poll<Result<T, Self::Error>> {
         match self {
-            Err(quico::Error::Busy) | Err(quico::Error::Retry) => Poll::Pending,
+            Err(zrquic::Error::Busy) | Err(zrquic::Error::Retry) => Poll::Pending,
             _ => Poll::Ready(self),
         }
     }

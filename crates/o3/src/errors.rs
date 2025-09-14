@@ -9,9 +9,9 @@ pub enum Error {
     #[error(transparent)]
     Io(std::io::Error),
 
-    /// Unhandled `quico::Error`
+    /// Unhandled `zrquic::Error`
     #[error(transparent)]
-    Quico(quico::Error),
+    Quico(zrquic::Error),
 
     /// I/O operation can't be complete immediately.
     #[error("Retry this operation later.")]
@@ -50,10 +50,10 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<quico::Error> for Error {
-    fn from(value: quico::Error) -> Self {
+impl From<zrquic::Error> for Error {
+    fn from(value: zrquic::Error) -> Self {
         match value {
-            quico::Error::Retry | quico::Error::Busy => Self::Retry,
+            zrquic::Error::Retry | zrquic::Error::Busy => Self::Retry,
             _ => Self::Quico(value),
         }
     }

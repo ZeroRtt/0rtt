@@ -13,8 +13,8 @@ impl From<mio::Token> for Token {
     }
 }
 
-impl From<(quico::Token, u64)> for Token {
-    fn from(value: (quico::Token, u64)) -> Self {
+impl From<(zrquic::Token, u64)> for Token {
+    fn from(value: (zrquic::Token, u64)) -> Self {
         Token::QuicStream(value.0.0, value.1)
     }
 }

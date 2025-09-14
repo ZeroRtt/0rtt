@@ -868,10 +868,10 @@ dependencies = [
  "log",
  "mio",
  "pretty_env_logger",
- "quico",
  "rand",
  "ringbuff",
  "thiserror",
+ "zrquic",
 ]
 
 [[package]]
@@ -1027,21 +1027,6 @@ dependencies = [
  "slab",
  "smallvec",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "quico"
-version = "0.1.1"
-dependencies = [
- "boring",
- "divan",
- "log",
- "parking_lot",
- "pretty_env_logger",
- "priority-queue",
- "quiche",
- "rand",
- "thiserror",
 ]
 
 [[package]]
@@ -1636,4 +1621,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "zrquic"
+version = "0.1.2"
+dependencies = [
+ "boring",
+ "divan",
+ "log",
+ "parking_lot",
+ "pretty_env_logger",
+ "priority-queue",
+ "quiche",
+ "rand",
+ "thiserror",
 ]

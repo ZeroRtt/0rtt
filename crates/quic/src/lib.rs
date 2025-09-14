@@ -10,18 +10,24 @@ pub use errors::*;
 
 #[cfg(feature = "server")]
 #[cfg_attr(docsrs, doc(cfg(feature = "server")))]
-pub mod validation;
+mod validation;
+#[cfg(feature = "server")]
+pub use validation::*;
 
 mod readiness;
 pub use readiness::*;
 
 #[cfg(feature = "server")]
 #[cfg_attr(docsrs, doc(cfg(feature = "server")))]
-pub mod acceptor;
+mod acceptor;
+#[cfg(feature = "server")]
+pub use acceptor::*;
 
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
-pub mod client;
+mod client;
+#[cfg(feature = "client")]
+pub use client::*;
 
 mod group;
 pub use group::*;

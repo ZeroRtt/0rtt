@@ -32,9 +32,9 @@ impl Mapping {
         );
 
         if let Token::QuicStream(token, stream_id) = from.token() {
-            self.quic_registry.register(quico::Token(token), stream_id);
+            self.quic_registry.register(zrquic::Token(token), stream_id);
         } else if let Token::QuicStream(token, stream_id) = to.token() {
-            self.quic_registry.register(quico::Token(token), stream_id);
+            self.quic_registry.register(zrquic::Token(token), stream_id);
         }
 
         assert!(self.mapping.insert(from.token(), to.token()).is_none());
@@ -48,7 +48,7 @@ impl Mapping {
         assert!(self.ports.insert(to.token(), UnsafeCell::new(to)).is_none());
     }
 
-    pub fn on_quic_closed(&mut self, token: quico::Token) {
+    pub fn on_quic_closed(&mut self, token: zrquic::Token) {
         if let Some(streams) = self.quic_registry.close(token) {
             for stream_id in streams {
                 let from = Token::QuicStream(token.0, stream_id);
@@ -123,10 +123,10 @@ impl Mapping {
 
                 if let Token::QuicStream(token, stream_id) = from {
                     self.quic_registry
-                        .deregister(quico::Token(token), stream_id);
+                        .deregister(zrquic::Token(token), stream_id);
                 } else if let Token::QuicStream(token, stream_id) = to {
                     self.quic_registry
-                        .deregister(quico::Token(token), stream_id);
+                        .deregister(zrquic::Token(token), stream_id);
                 }
 
                 Ok(0)

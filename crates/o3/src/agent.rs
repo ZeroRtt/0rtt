@@ -13,7 +13,7 @@ use mio::{
     Events, Interest,
     net::{TcpListener, TcpStream, UdpSocket},
 };
-use quico::quiche::{self, RecvInfo};
+use zrquic::quiche::{self, RecvInfo};
 
 use crate::{
     buf::QuicBuf,
@@ -47,7 +47,7 @@ pub struct Agent {
     /// Pairing inbound tcp streams.
     pairing_tcp_streams: VecDeque<TcpStream>,
     /// Group for quic sockets.
-    group: Arc<quico::Group>,
+    group: Arc<zrquic::Group>,
     /// connector for quic connections.
     quic_connector: QuicConnector,
     /// bidirectional data pipelines.
@@ -84,7 +84,7 @@ impl Agent {
             Interest::READABLE | Interest::WRITABLE,
         )?;
 
-        let group = quico::Group::new();
+        let group = zrquic::Group::new();
 
         Ok(Self {
             max_pairing_tcp_streams,
@@ -134,19 +134,19 @@ impl Agent {
 
             for event in events {
                 match event.kind {
-                    quico::EventKind::Send => self.on_quic_send(event.token)?,
-                    quico::EventKind::Recv => unreachable!("Single thread mode."),
-                    quico::EventKind::Connected => self.on_quic_connected(event.token)?,
-                    quico::EventKind::Accept => unreachable!("quic accept"),
-                    quico::EventKind::Closed => self.on_quic_closed(event.token)?,
-                    quico::EventKind::StreamOpen => self.on_quic_stream_open(event.token)?,
-                    quico::EventKind::StreamSend => {
+                    zrquic::EventKind::Send => self.on_quic_send(event.token)?,
+                    zrquic::EventKind::Recv => unreachable!("Single thread mode."),
+                    zrquic::EventKind::Connected => self.on_quic_connected(event.token)?,
+                    zrquic::EventKind::Accept => unreachable!("quic accept"),
+                    zrquic::EventKind::Closed => self.on_quic_closed(event.token)?,
+                    zrquic::EventKind::StreamOpen => self.on_quic_stream_open(event.token)?,
+                    zrquic::EventKind::StreamSend => {
                         self.on_quic_stream_send(event.token, event.stream_id)?
                     }
-                    quico::EventKind::StreamRecv => {
+                    zrquic::EventKind::StreamRecv => {
                         self.on_quic_stream_recv(event.token, event.stream_id)?
                     }
-                    quico::EventKind::StreamAccept => unreachable!("quic stream accept"),
+                    zrquic::EventKind::StreamAccept => unreachable!("quic stream accept"),
                 }
             }
         }
@@ -274,7 +274,7 @@ impl Agent {
 }
 
 impl Agent {
-    fn on_quic_send(&mut self, token: quico::Token) -> Result<()> {
+    fn on_quic_send(&mut self, token: zrquic::Token) -> Result<()> {
         let mut buf = QuicBuf::new();
 
         let Poll::Ready(Ok((send_size, send_info))) =
@@ -300,28 +300,28 @@ impl Agent {
         Ok(())
     }
 
-    fn on_quic_connected(&mut self, token: quico::Token) -> Result<()> {
+    fn on_quic_connected(&mut self, token: zrquic::Token) -> Result<()> {
         self.quic_connector.connected(token);
         self.make_port_mapping()
     }
 
-    fn on_quic_closed(&mut self, token: quico::Token) -> Result<()> {
+    fn on_quic_closed(&mut self, token: zrquic::Token) -> Result<()> {
         self.quic_connector.closed(token);
         self.mapping.on_quic_closed(token);
         Ok(())
     }
 
-    fn on_quic_stream_open(&mut self, _: quico::Token) -> Result<()> {
+    fn on_quic_stream_open(&mut self, _: zrquic::Token) -> Result<()> {
         log::info!("on_quic_stream_open");
 
         self.make_port_mapping()
     }
 
-    fn on_quic_stream_send(&mut self, conn_id: quico::Token, stream_id: u64) -> Result<()> {
+    fn on_quic_stream_send(&mut self, conn_id: zrquic::Token, stream_id: u64) -> Result<()> {
         self.on_transfer_to((conn_id, stream_id))
     }
 
-    fn on_quic_stream_recv(&mut self, conn_id: quico::Token, stream_id: u64) -> Result<()> {
+    fn on_quic_stream_recv(&mut self, conn_id: zrquic::Token, stream_id: u64) -> Result<()> {
         self.on_transfer_from((conn_id, stream_id))
     }
 

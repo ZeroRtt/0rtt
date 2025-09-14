@@ -7,7 +7,7 @@ use o3::{
     errors::Result,
     redirect::Redirect,
 };
-use quico::{acceptor::Acceptor, quiche, validation::SimpleAddressValidator};
+use zrquic::{Acceptor, SimpleAddressValidator, quiche};
 
 fn main() {
     let cli = Cli::parse();

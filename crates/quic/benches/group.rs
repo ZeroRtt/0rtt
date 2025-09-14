@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use divan::Bencher;
 use quiche::Config;
-use quico::Group;
+use zrquic::Group;
 
 fn main() {
     divan::main();

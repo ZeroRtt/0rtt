@@ -7,7 +7,7 @@ use std::{
 };
 
 use mio::{Interest, net::UdpSocket};
-use quico::{Group, acceptor::Acceptor, quiche::RecvInfo};
+use zrquic::{Acceptor, Group, quiche::RecvInfo};
 
 use crate::{
     buf::QuicBuf,
@@ -34,7 +34,7 @@ pub struct Redirect {
     /// Map quic socket address to token.
     quic_socket_addrs: HashMap<SocketAddr, usize>,
     /// Inbound QUIC streams that are not yet paired
-    pairing_quic_streams: VecDeque<(quico::Token, u64)>,
+    pairing_quic_streams: VecDeque<(zrquic::Token, u64)>,
     /// Acceptor for inbound quic connections.
     acceptor: Acceptor,
     /// Polls for readiness events on all registered values.
@@ -122,24 +122,24 @@ impl Redirect {
 
             for event in events {
                 match event.kind {
-                    quico::EventKind::Send => self.on_quic_send(event.token)?,
-                    quico::EventKind::Recv => unreachable!("Single thread mode."),
-                    quico::EventKind::Connected => unreachable!("Redirect"),
-                    quico::EventKind::Accept => {
+                    zrquic::EventKind::Send => self.on_quic_send(event.token)?,
+                    zrquic::EventKind::Recv => unreachable!("Single thread mode."),
+                    zrquic::EventKind::Connected => unreachable!("Redirect"),
+                    zrquic::EventKind::Accept => {
                         log::info!("Accept new quic connection, {:?}", event.token);
                     }
-                    quico::EventKind::Closed => {
+                    zrquic::EventKind::Closed => {
                         log::info!("Quic connection closed, {:?}", event.token);
                         self.mapping.on_quic_closed(event.token);
                     }
-                    quico::EventKind::StreamOpen => unreachable!("Redirect"),
-                    quico::EventKind::StreamSend => {
+                    zrquic::EventKind::StreamOpen => unreachable!("Redirect"),
+                    zrquic::EventKind::StreamSend => {
                         self.on_quic_stream_send(event.token, event.stream_id)?
                     }
-                    quico::EventKind::StreamRecv => {
+                    zrquic::EventKind::StreamRecv => {
                         self.on_quic_stream_recv(event.token, event.stream_id)?
                     }
-                    quico::EventKind::StreamAccept => {
+                    zrquic::EventKind::StreamAccept => {
                         self.on_quic_stream_accept(event.token, event.stream_id)?
                     }
                 }
@@ -305,7 +305,7 @@ impl Redirect {
         Ok(())
     }
 
-    fn on_quic_send(&mut self, token: quico::Token) -> Result<()> {
+    fn on_quic_send(&mut self, token: zrquic::Token) -> Result<()> {
         let mut buf = QuicBuf::new();
 
         let Poll::Ready(Ok((send_size, send_info))) =
@@ -334,7 +334,7 @@ impl Redirect {
         Ok(())
     }
 
-    fn on_quic_stream_accept(&mut self, conn_id: quico::Token, stream_id: u64) -> Result<()> {
+    fn on_quic_stream_accept(&mut self, conn_id: zrquic::Token, stream_id: u64) -> Result<()> {
         log::trace!("on_quic_stream_accept");
 
         self.pairing_quic_streams.push_back((conn_id, stream_id));
@@ -344,11 +344,11 @@ impl Redirect {
         self.tcp_connector.connect(self.poll.registry(), token)
     }
 
-    fn on_quic_stream_send(&mut self, conn_id: quico::Token, stream_id: u64) -> Result<()> {
+    fn on_quic_stream_send(&mut self, conn_id: zrquic::Token, stream_id: u64) -> Result<()> {
         self.on_transfer_to((conn_id, stream_id))
     }
 
-    fn on_quic_stream_recv(&mut self, conn_id: quico::Token, stream_id: u64) -> Result<()> {
+    fn on_quic_stream_recv(&mut self, conn_id: zrquic::Token, stream_id: u64) -> Result<()> {
         self.on_transfer_from((conn_id, stream_id))
     }
 

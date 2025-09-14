@@ -1,9 +1,7 @@
 use std::{time::Duration, vec};
 
 use quiche::{Config, RecvInfo};
-use quico::{
-    Error, EventKind, Group, Token, acceptor::Acceptor, validation::SimpleAddressValidator,
-};
+use zrquic::{Acceptor, Error, EventKind, Group, SimpleAddressValidator, Token};
 
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
