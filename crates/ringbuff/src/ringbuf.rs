@@ -13,7 +13,7 @@ use futures::io::{AsyncBufRead, AsyncRead, AsyncWrite};
 // An in-memory ring buffer implemenation.
 pub struct RingBuf {
     /// inner memory block.
-    memory_block: Vec<u8>,
+    memory_block: Box<[u8]>,
     /// cursor for read position.
     read_pos: u64,
     /// cursor for write position.
@@ -35,7 +35,7 @@ impl RingBuf {
     pub fn with_capacity(len: usize) -> Self {
         assert!(len > 0, "capacity is zero.");
         Self {
-            memory_block: vec![0; len],
+            memory_block: vec![0; len].into_boxed_slice(),
             read_pos: 0,
             write_pos: 0,
         }

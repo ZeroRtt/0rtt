@@ -1,16 +1,6 @@
-use crate::{Result, Token};
+use std::any::Any;
 
-/// Readiness event kind for transports.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TransportEventKind {
-    Send,
-    Recv,
-    StreamOpen,
-    StreamAccept,
-    StreamSend,
-    StreamRecv,
-    StreamClosed,
-}
+use crate::{Buffer, Result, Token};
 
 /// Transport for stream protocols.
 pub trait Transport {
@@ -21,17 +11,20 @@ pub trait Transport {
     fn send_buffer_size_hint(&self) -> usize;
 
     /// Receive data from underlying transport or device.
-    fn recv(&self, buf: &mut [u8]) -> Result<usize>;
+    fn transport_recv(&self, buf: &mut Buffer) -> Result<()>;
 
     /// Send data to underlying transport or device.
-    fn send(&self, buf: &mut [u8]) -> Result<usize>;
+    fn transport_send(&self, buf: &mut Buffer) -> Result<()>;
 
     /// Create a new client-side connection.
-    fn stream_open(&self, raddr: &str) -> Result<Token>;
+    fn connect(&self, parms: Box<dyn Any>) -> Result<Token>;
+
+    /// Create a new client-side connection.
+    fn bind(&self, parms: Box<dyn Any>) -> Result<Token>;
 
     /// Send data over this stream.
-    fn stream_send(&self, token: Token, buf: &mut [u8]) -> Result<usize>;
+    fn write(&self, token: Token, buf: &[u8]) -> Result<usize>;
 
     /// Receive data via this stream.
-    fn stream_recv(&self, token: Token, buf: &mut [u8]) -> Result<usize>;
+    fn read(&self, token: Token, buf: &mut [u8]) -> Result<usize>;
 }

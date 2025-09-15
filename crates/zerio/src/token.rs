@@ -1,3 +1,8 @@
 /// Associates readiness events.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Token(pub usize);
+pub enum Token {
+    USize(usize),
+    U64(u64),
+    U32(u32),
+    QuicStream(u32, u64),
+}
