@@ -12,7 +12,11 @@ log = { version = "^0.4" }
 thiserror = "^2.0"
 futures-channel = "^0.3"
 futures-task = "^0.3"
+num_cpus = "^1.17"
+parking_lot = "^0.12"
+crossbeam = { version="0.8.4", optional = true }
 
 [features]
-default = ["global"]
-global = []
+default = ["executor","thread-pool"]
+executor = []
+thread-pool = ["crossbeam"]
