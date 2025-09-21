@@ -1,5 +1,5 @@
 [package]
-description = "Concurrent I/O beyond rust async runtime based on reactor pattern."
+description = "An experimental structured concurrency runtime for Rust."
 documentation = "https://docs.rs/zerio"
 edition = "2024"
 license = "MIT"
@@ -10,3 +10,9 @@ version = "0.1.0"
 [dependencies]
 log = { version = "^0.4" }
 thiserror = "^2.0"
+futures-channel = "^0.3"
+futures-task = "^0.3"
+
+[features]
+default = ["global"]
+global = []
