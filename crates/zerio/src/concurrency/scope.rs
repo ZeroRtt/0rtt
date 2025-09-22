@@ -63,7 +63,7 @@ where
 
     /// Create a `Future` to await the completion of all sub-tasks.
     #[inline]
-    pub async fn wait_all(&self) {
+    pub async fn wait(&self) {
         _ = self.dispatcher.scope_wait(self.key).await;
     }
 }
