@@ -1674,11 +1674,13 @@ name = "zerio"
 version = "0.1.0"
 dependencies = [
  "crossbeam",
+ "divan",
  "futures-channel",
  "futures-task",
  "log",
  "num_cpus",
  "parking_lot",
+ "rand",
  "thiserror",
 ]
 

@@ -3,11 +3,11 @@ use std::{
     fmt::Display,
 };
 
-use crate::concurrency::{ScopeKey, TasKey};
+use crate::concurrency::{ScopeKey, JobKey};
 
 #[derive(Default)]
 struct ScopeNode {
-    tasks: HashSet<TasKey>,
+    tasks: HashSet<JobKey>,
     scopes: HashSet<ScopeKey>,
 }
 
