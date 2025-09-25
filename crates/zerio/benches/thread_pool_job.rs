@@ -1,13 +1,13 @@
 use divan::Bencher;
 use rand::seq::SliceRandom;
-use zerio::{concurrency::JobState, executor::Job};
+use zerio::{concurrency::JobState, executor::JobHandle};
 
 fn main() {
     divan::main();
 }
 
 #[divan::bench(sample_count = 50000, threads = num_cpus::get())]
-fn bench_thread_pool_job_state(bencher: Bencher) {
+fn update_state(bencher: Bencher) {
     bencher
         .with_inputs(|| {
             let mut states = [
@@ -19,7 +19,8 @@ fn bench_thread_pool_job_state(bencher: Bencher) {
             ];
 
             states.shuffle(&mut rand::rng());
-            let job = Job::with_state(0.into(), Box::new(async {}).into(), states[0]);
+            let job = JobHandle::with_state(0.into(), states[0]);
+            let mut states = [JobState::Active, JobState::Cancelled, JobState::Completed];
             states.shuffle(&mut rand::rng());
 
             (job, states[0])

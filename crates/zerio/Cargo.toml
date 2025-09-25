@@ -21,11 +21,15 @@ divan = "0.1.21"
 rand = "0.9.2"
 
 [features]
-default = ["executor","thread-pool"]
+default = ["thread-pool"]
 executor = []
-thread-pool = ["crossbeam"]
-
+thread-pool = ["crossbeam","executor"]
 
 [[bench]]
 name = "thread_pool_job"
+harness = false
+
+
+[[bench]]
+name = "crossbeam"
 harness = false
