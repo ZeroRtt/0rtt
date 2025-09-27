@@ -28,7 +28,6 @@ default = ["server", "client"]
 server = []
 client = ["rand"]
 
-
 [[bench]]
 name = "readiness"
 harness = false

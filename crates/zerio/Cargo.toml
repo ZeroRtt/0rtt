@@ -1,35 +1,11 @@
 [package]
-description = "An experimental structured concurrency runtime for Rust."
+description = "non-blocking I/O beyound rust asynchronous runtimes."
 documentation = "https://docs.rs/zerio"
 edition = "2024"
 license = "MIT"
 name = "zerio"
 repository = "https://github.com/ZeroRtt/ZeroRtt/zerio"
 version = "0.1.0"
+edition = "2024"
 
 [dependencies]
-log = { version = "^0.4" }
-thiserror = "^2.0"
-futures-channel = "^0.3"
-futures-task = "^0.3"
-num_cpus = "^1.17"
-parking_lot = "^0.12"
-crossbeam = { version="0.8.4", optional = true }
-
-[dev-dependencies]
-divan = "0.1.21"
-rand = "0.9.2"
-
-[features]
-default = ["thread-pool"]
-executor = []
-thread-pool = ["crossbeam","executor"]
-
-[[bench]]
-name = "thread_pool_job"
-harness = false
-
-
-[[bench]]
-name = "crossbeam"
-harness = false
