@@ -278,6 +278,13 @@ impl Group {
         }
     }
 
+    /// Close a connection.
+    pub fn close(&self, token: Token) -> Result<()> {
+        self.registration
+            .lock()
+            .close(token, DEFAULT_RELEASE_TIMER_THRESHOLD)
+    }
+
     /// Try open a new outbound stream.
     pub fn stream_open(&self, token: Token) -> Result<u64> {
         self.registration

@@ -109,6 +109,17 @@ impl Registration {
         Err(Error::NotFound)
     }
 
+    /// Close conneciton.
+    pub fn close(&mut self, token: Token, release_timer_threshold: Duration) -> Result<()> {
+        let readiness = unsafe { self.readiness() };
+
+        if let Some(state) = self.conn_stats.get_mut(&token) {
+            state.close(release_timer_threshold, readiness)
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+
     /// Try open a outbound stream.
     pub fn stream_open(&mut self, token: Token, release_timer_threshold: Duration) -> Result<u64> {
         let readiness = unsafe { self.readiness() };

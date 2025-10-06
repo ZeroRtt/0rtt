@@ -47,7 +47,7 @@ fn is_bidi(stream_id: u64) -> bool {
 }
 
 /// Internal connection state.
-pub struct ConnState {
+pub(crate) struct ConnState {
     /// Connection id.
     id: Token,
     /// previous value of is_established.
@@ -172,6 +172,28 @@ impl ConnState {
         self.lock_count += 1;
 
         self.raise_events(send_done, release_timer_threshold, readiness);
+    }
+
+    pub fn close(
+        &mut self,
+        release_timer_threshold: Duration,
+        readiness: &mut Readiness,
+    ) -> Result<()> {
+        // check if this thread own the state.
+        let guard = self.try_lock(LocKind::Close)?;
+
+        // Safety: only one thread can access this code at the same time.
+        let conn = unsafe { self.as_mut() };
+
+        if let Err(err) = conn.close(false, 0x0, b"") {
+            if err != quiche::Error::Done {
+                log::error!("close connection, scid={:?}, err={}", conn.source_id(), err);
+            }
+        }
+
+        self.unlock(false, guard.lock_count, release_timer_threshold, readiness);
+
+        Ok(())
     }
 
     pub fn stream_shutdown(

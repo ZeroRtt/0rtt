@@ -1,11 +1,21 @@
 [package]
-description = "non-blocking I/O beyound rust asynchronous runtimes."
+description = "Asynchronous runtimes for `ZeroRtt`"
 documentation = "https://docs.rs/zerio"
 edition = "2024"
 license = "MIT"
 name = "zerio"
 repository = "https://github.com/ZeroRtt/ZeroRtt/zerio"
 version = "0.1.0"
-edition = "2024"
 
 [dependencies]
+mio = { version = "^1", features = ["net", "os-poll"] }
+quiche = { version = "^0.24", default-features = false, features = [
+    "boringssl-boring-crate",
+] }
+boring = { version = "^4.17" }
+rand = { version = "0.9.2"}
+lock_api = "0.4.13"
+log = { version = "^0.4" }
+thiserror = "^2.0"
+
+[dev-dependencies]

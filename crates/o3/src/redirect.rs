@@ -268,7 +268,7 @@ impl Redirect {
             let read_size = buf.readable();
 
             // skip all returned errors.
-            match self.group.accept_recv(
+            match self.group.server_recv(
                 &mut self.acceptor,
                 buf.writable_buf(),
                 read_size,

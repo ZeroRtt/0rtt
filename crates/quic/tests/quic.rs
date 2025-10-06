@@ -93,7 +93,7 @@ fn test_connected() {
 
                 if event.token == client {
                     let (send_size, send_info) = group
-                        .accept_recv(
+                        .server_recv(
                             &mut acceptor,
                             &mut buf,
                             send_size,
@@ -184,7 +184,7 @@ fn test_multi_conn() {
 
                 if event.token == client {
                     let (send_size, send_info) = group
-                        .accept_recv(
+                        .server_recv(
                             &mut acceptor,
                             &mut buf,
                             send_size,
@@ -265,7 +265,7 @@ fn test_accept() {
 
                 if event.token == client {
                     let (send_size, send_info) = group
-                        .accept_recv(
+                        .server_recv(
                             &mut acceptor,
                             &mut buf,
                             send_size,
@@ -372,7 +372,7 @@ fn test_stream_open() {
 
                 if event.token == client {
                     let (send_size, send_info) = group
-                        .accept_recv(
+                        .server_recv(
                             &mut acceptor,
                             &mut buf,
                             send_size,
@@ -517,7 +517,7 @@ fn test_stream_open_limits() {
 
                 if event.token == client {
                     let (send_size, send_info) = group
-                        .accept_recv(
+                        .server_recv(
                             &mut acceptor,
                             &mut buf,
                             send_size,
@@ -666,7 +666,7 @@ fn test_server_side_stream_open() {
 
                 if event.token == client {
                     let (send_size, send_info) = group
-                        .accept_recv(
+                        .server_recv(
                             &mut acceptor,
                             &mut buf,
                             send_size,

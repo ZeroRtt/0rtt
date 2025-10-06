@@ -190,7 +190,7 @@ impl Acceptor {
 
 impl Group {
     /// The server socket uses this function instead of `recv` to handle accepting data.
-    pub fn accept_recv(
+    pub fn server_recv(
         &self,
         acceptor: &mut Acceptor,
         buf: &mut [u8],
