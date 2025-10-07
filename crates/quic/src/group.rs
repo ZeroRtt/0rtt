@@ -17,7 +17,7 @@ static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
 
 struct ConnGuard<'a> {
     token: Token,
-    conn_state_guard: crate::conn::ConnGuard,
+    conn_state_guard: crate::conn::StateGuard,
     group: &'a Group,
     send_done: bool,
 }

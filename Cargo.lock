@@ -1607,13 +1607,12 @@ checksum = "5c573471f125075647d03df72e026074b7203790d41351cd6edc96f46bcccd36"
 name = "zerio"
 version = "0.1.0"
 dependencies = [
- "boring",
- "lock_api",
+ "fixedbuf",
  "log",
  "mio",
- "quiche",
- "rand",
+ "parking_lot",
  "thiserror",
+ "zrquic",
 ]
 
 [[package]]

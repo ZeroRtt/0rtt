@@ -4,7 +4,7 @@ use quiche::{Connection, ConnectionId};
 
 use crate::{
     Error, Readiness, Result, Token,
-    conn::{ConnGuard, ConnState, LocKind},
+    conn::{ConnState, LocKind, StateGuard},
 };
 
 #[derive(Default)]
@@ -85,7 +85,7 @@ impl Registration {
 
     /// Try lock one connection.
     #[inline(always)]
-    pub fn try_lock_conn(&mut self, token: Token, kind: LocKind) -> Result<ConnGuard> {
+    pub fn try_lock_conn(&mut self, token: Token, kind: LocKind) -> Result<StateGuard> {
         if let Some(state) = self.conn_stats.get_mut(&token) {
             state.try_lock(kind)
         } else {
@@ -99,7 +99,7 @@ impl Registration {
         &mut self,
         scid: &ConnectionId<'_>,
         kind: LocKind,
-    ) -> Result<(Token, ConnGuard)> {
+    ) -> Result<(Token, StateGuard)> {
         if let Some(token) = self.scids.get(scid).cloned() {
             if let Some(state) = self.conn_stats.get_mut(&token) {
                 return state.try_lock(kind).map(|guard| (token, guard));

@@ -74,12 +74,12 @@ impl From<ConnState> for quiche::Connection {
 }
 
 /// A lock guard for `ConnState`
-pub struct ConnGuard {
+pub struct StateGuard {
     pub lock_count: u64,
     pub conn: &'static mut Connection,
 }
 
-impl Debug for ConnGuard {
+impl Debug for StateGuard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ConnStateGuard")
             .field("lock_count", &self.lock_count)
@@ -125,7 +125,7 @@ impl ConnState {
     /// Safety:
     /// - This function is protected by an upper-level spin-lock.
     /// - Only one specific thread own the returns `&'static mut Connection` at the same time.
-    pub fn try_lock(&mut self, kind: LocKind) -> Result<ConnGuard> {
+    pub fn try_lock(&mut self, kind: LocKind) -> Result<StateGuard> {
         assert_ne!(kind, LocKind::None, "LocKind is None.");
         // The resource is busy.
         if self.locked != LocKind::None {
@@ -141,7 +141,7 @@ impl ConnState {
         self.locked = kind;
 
         // Upper level code needs to be careful to save the trace handle, which is needed to call `unlock`.
-        Ok(ConnGuard {
+        Ok(StateGuard {
             lock_count: self.lock_count,
             conn: unsafe { self.conn.get().as_mut().unwrap() },
         })

@@ -13,7 +13,7 @@ use quiche::ConnectionId;
 use crate::Result;
 
 /// Address validation trait.
-pub trait AddressValidator {
+pub trait AddressValidator: Send {
     /// Create a retry-token.
     fn mint_retry_token(
         &self,
