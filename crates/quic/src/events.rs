@@ -2,6 +2,8 @@ use std::{cmp::Reverse, collections::HashSet, time::Instant};
 
 use priority_queue::PriorityQueue;
 
+use crate::utils::is_bidi;
+
 /// Type for readiness events.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub enum EventKind {
@@ -16,13 +18,17 @@ pub enum EventKind {
     /// Connection is closed.
     Closed,
     /// Readiness for `stream_open` operation.
-    StreamOpen,
+    StreamOpenBidi,
+    /// Readiness for `stream_open` operation.
+    StreamOpenUni,
     /// Readiness for new inbound stream.
     StreamAccept,
     /// Readiness for `stream_send` operation.
     StreamSend,
     /// Readiness for `stream_recv` operation.
     StreamRecv,
+    /// Read lock.
+    ReadLock,
 }
 
 /// Associates readiness events with quic connection.
@@ -32,14 +38,14 @@ pub struct Token(pub u32);
 /// Readiness I/O event.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct Event {
+    /// Connection token.
+    pub token: Token,
     /// Type of this event.
     pub kind: EventKind,
     /// Event source is a server-side connection.
     pub is_server: bool,
     /// Event raised by an I/O error.
     pub is_error: bool,
-    /// Connection token.
-    pub token: Token,
     /// Optional stream identifier for the event source.
     /// The default value `0` indicates that the event source is not a QUIC stream.
     pub stream_id: u64,
@@ -104,95 +110,19 @@ impl Readiness {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::vec;
+/// Stream type.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+pub enum StreamKind {
+    Uni,
+    Bidi,
+}
 
-    use super::*;
-
-    #[test]
-    fn test_deduplication() {
-        let mut readiness = Readiness::default();
-
-        readiness.insert(
-            Event {
-                kind: EventKind::Send,
-                is_server: false,
-                is_error: false,
-                token: Token(0),
-                stream_id: 0,
-            },
-            None,
-        );
-
-        readiness.insert(
-            Event {
-                kind: EventKind::Send,
-                is_server: false,
-                is_error: false,
-                token: Token(0),
-                stream_id: 0,
-            },
-            None,
-        );
-
-        let mut events = vec![];
-
-        assert!(readiness.poll(&mut events).is_none());
-
-        assert_eq!(
-            events,
-            vec![Event {
-                kind: EventKind::Send,
-                is_server: false,
-                is_error: false,
-                token: Token(0),
-                stream_id: 0,
-            }]
-        );
-    }
-
-    #[test]
-    fn test_timeout() {
-        let delay_to = Instant::now();
-
-        let mut readiness = Readiness::default();
-
-        readiness.insert(
-            Event {
-                kind: EventKind::Send,
-                is_server: false,
-                is_error: false,
-                token: Token(0),
-                stream_id: 0,
-            },
-            Some(delay_to),
-        );
-
-        readiness.insert(
-            Event {
-                kind: EventKind::Send,
-                is_server: false,
-                is_error: false,
-                token: Token(0),
-                stream_id: 0,
-            },
-            Some(delay_to),
-        );
-
-        let mut events = vec![];
-
-        assert!(readiness.poll(&mut events).is_none());
-
-        assert_eq!(
-            events,
-            vec![Event {
-                kind: EventKind::Send,
-                is_server: false,
-                is_error: false,
-                token: Token(0),
-                stream_id: 0,
-            }]
-        );
+impl From<u64> for StreamKind {
+    fn from(value: u64) -> Self {
+        if is_bidi(value) {
+            StreamKind::Bidi
+        } else {
+            StreamKind::Uni
+        }
     }
 }

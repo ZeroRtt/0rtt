@@ -1,116 +1,209 @@
 use std::{
-    ops::{Deref, DerefMut},
+    borrow::Cow,
+    cell::RefCell,
+    collections::HashMap,
+    ops::DerefMut,
     time::{Duration, Instant},
 };
 
-use parking_lot::{Condvar, Mutex};
+use parking_lot::{Mutex, RwLock};
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
 use crate::{
-    Error, Event, Result, Token,
-    conn::LocKind,
-    registration::Registration,
-    utils::{min_of_some, release_time},
+    Error, Event, Readiness, Result, StreamKind, Token,
+    conn::{LocKind, LockContext, QuicConn},
+    utils::release_time,
 };
 
 static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
 
-struct ConnGuard<'a> {
-    token: Token,
-    conn_state_guard: crate::conn::StateGuard,
-    group: &'a Group,
-    send_done: bool,
+macro_rules! lock {
+    ($self:ident, $token: ident, $kind: expr) => {{
+        let state = $self.state.lock();
+
+        let conn = state
+            .conns
+            .get(&$token)
+            .expect("state: conn not found.")
+            .borrow_mut()
+            .try_lock($kind, |ctx| $self.unlock(ctx))?;
+
+        drop(state);
+
+        conn
+    }};
 }
 
-impl<'a> Drop for ConnGuard<'a> {
-    fn drop(&mut self) {
-        let mut registration = self.group.registration.lock();
-
-        unsafe {
-            assert!(
-                registration
-                    .unlock_conn(
-                        self.send_done,
-                        DEFAULT_RELEASE_TIMER_THRESHOLD,
-                        self.token,
-                        self.conn_state_guard.lock_count,
-                    )
-                    .is_ok(),
-                "unlock connection {:?}",
-                self.token
-            );
-        }
-
-        self.group.condvar.notify_one();
-    }
+/// Poll api.
+pub trait Poll {
+    /// poll events, and returns next release time.
+    fn poll(&mut self, events: &mut Vec<Event>) -> Option<Instant>;
 }
 
-impl<'a> Deref for ConnGuard<'a> {
-    type Target = quiche::Connection;
-
-    fn deref(&self) -> &Self::Target {
-        self.conn_state_guard.conn
-    }
-}
-
-impl<'a> DerefMut for ConnGuard<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.conn_state_guard.conn
-    }
-}
-
-/// A multiplexer for quic connections.
 #[derive(Default)]
+struct State {
+    token_next: u32,
+    conns: HashMap<Token, RefCell<QuicConn>>,
+    readiness: RefCell<Readiness>,
+}
+
+/// A group of `quiche:Connection`s.
 pub struct Group {
-    registration: Mutex<Registration>,
-    condvar: Condvar,
+    state: Mutex<State>,
+    scids: RwLock<HashMap<ConnectionId<'static>, Token>>,
+}
+
+impl Default for Group {
+    fn default() -> Self {
+        Self {
+            state: Default::default(),
+            scids: Default::default(),
+        }
+    }
 }
 
 impl Group {
-    /// Create a new `Group` instance.
+    /// Create a group with default parameters.
     pub fn new() -> Self {
         Self::default()
     }
-    /// Wrap and register a `quiche::Connection`.
-    pub fn register(&self, conn: quiche::Connection) -> Result<Token> {
-        let mut state = self.registration.lock();
 
-        state.register(conn, DEFAULT_RELEASE_TIMER_THRESHOLD)
+    /// Wrap and register a new `quiche::Connection`.
+    #[inline]
+    pub fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
+        let mut state = self.state.lock();
+
+        loop {
+            let token = Token(state.token_next);
+
+            (state.token_next, _) = state.token_next.overflowing_add(1);
+
+            if state.conns.contains_key(&token) {
+                continue;
+            }
+
+            assert!(
+                self.scids
+                    .write()
+                    .insert(wrapped.source_id().into_owned(), token)
+                    .is_none()
+            );
+
+            log::trace!(
+                "register quic connection, token={:?}, trace_id={}",
+                token,
+                wrapped.trace_id()
+            );
+
+            let conn = RefCell::new(QuicConn::new(
+                token,
+                wrapped,
+                DEFAULT_RELEASE_TIMER_THRESHOLD,
+            ));
+
+            let guard = conn.borrow_mut().try_lock(LocKind::ReadLock, |context| {
+                conn.borrow_mut().unlock(
+                    context.lock_count,
+                    false,
+                    state.readiness.borrow_mut().deref_mut(),
+                );
+            })?;
+
+            drop(guard);
+
+            state.conns.insert(token, conn);
+
+            return Ok(token);
+        }
     }
 
-    /// Unwrap and release managed `quiche::Connection.`
+    /// Unwrap a bound `quiche::Connection`
+    #[inline]
     pub fn deregister(&self, token: Token) -> Result<quiche::Connection> {
-        let mut state = self.registration.lock();
-        state.deregister(token)
+        let mut state = self.state.lock();
+
+        let conn: quiche::Connection = state
+            .conns
+            .remove(&token)
+            .ok_or_else(|| Error::NotFound)?
+            .into_inner()
+            .into();
+
+        drop(state);
+
+        assert_eq!(
+            self.scids.write().remove(&conn.source_id().into_owned()),
+            Some(token)
+        );
+
+        Ok(conn)
     }
 
-    fn lock_conn(&self, token: Token, kind: LocKind) -> Result<ConnGuard<'_>> {
-        let mut state = self.registration.lock();
-
-        Ok(ConnGuard {
-            token,
-            conn_state_guard: state.try_lock_conn(token, kind)?,
-            group: self,
-            send_done: false,
-        })
+    fn unlock(&self, ctx: LockContext) {
+        let state = self.state.lock();
+        state
+            .conns
+            .get(&ctx.token)
+            .expect("Unlock.")
+            .borrow_mut()
+            .unlock(
+                ctx.lock_count,
+                ctx.send_done,
+                state.readiness.borrow_mut().deref_mut(),
+            );
     }
 
-    fn lock_conn_with(&self, scid: &ConnectionId<'_>, kind: LocKind) -> Result<ConnGuard<'_>> {
-        let mut state = self.registration.lock();
+    /// Process a packet recv.
+    /// Processes QUIC packets received from the peer.
+    pub(crate) fn recv_(
+        &self,
+        scid: &ConnectionId<'_>,
+        buf: &mut [u8],
+        info: RecvInfo,
+        is_server: bool,
+    ) -> Result<(Token, usize)> {
+        let token = self
+            .scids
+            .read()
+            .get(&scid)
+            .ok_or_else(|| Error::NotFound)?
+            .clone();
 
-        let (token, conn_state_guard) = state.try_lock_conn_by(scid, kind)?;
+        let mut conn = lock!(self, token, LocKind::Recv);
 
-        Ok(ConnGuard {
-            token,
-            conn_state_guard,
-            group: self,
-            send_done: false,
-        })
+        if is_server && !conn.is_server() {
+            panic!("dispatch packet to non-server connection.");
+        }
+
+        match conn.recv(buf, info) {
+            Ok(recv_size) => {
+                log::trace!(
+                    "Connection recv, scid={:?}, len={}",
+                    conn.source_id(),
+                    recv_size
+                );
+
+                Ok((token, recv_size))
+            }
+            Err(err) => {
+                log::error!("Connection recv, scid={:?}, err={}", conn.source_id(), err);
+                Err(Error::Quiche(err))
+            }
+        }
+    }
+
+    /// Processes QUIC packets received from the peer.
+    pub fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
+        let header =
+            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
+
+        self.recv_(&header.dcid, buf, info, false)
+            .map(|(_, recv_size)| recv_size)
     }
 
     /// Writes a single QUIC packet to be sent to the peer.
     pub fn send(&self, token: Token, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
-        let mut conn = self.lock_conn(token, LocKind::Send)?;
+        let mut conn = lock!(self, token, LocKind::Recv);
 
         if let Some(release_time) =
             release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD)
@@ -138,7 +231,7 @@ impl Group {
             }
             Err(quiche::Error::Done) => {
                 log::trace!("connection send, scid={:?}, done", conn.trace_id());
-                conn.send_done = true;
+                conn.send_done();
                 return Err(Error::Retry);
             }
             Err(err) => {
@@ -148,44 +241,52 @@ impl Group {
         }
     }
 
-    /// Processes QUIC packets received from the peer.
-    pub fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
-        let header =
-            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
+    /// Close one connection.
+    pub fn close(
+        &self,
+        token: Token,
+        app: bool,
+        err: u64,
+        reason: Cow<'static, [u8]>,
+    ) -> Result<()> {
+        let state = self.state.lock();
+        let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        self.recv_with_(&header.dcid, buf, info, false)
-            .map(|(_, recv_size)| recv_size)
+        conn.borrow_mut().close(app, err, reason, |ctx| {
+            conn.borrow_mut().unlock(
+                ctx.lock_count,
+                false,
+                state.readiness.borrow_mut().deref_mut(),
+            )
+        })
     }
 
-    /// Processes QUIC packets received from the peer.
-    pub(crate) fn recv_with_(
-        &self,
-        scid: &ConnectionId<'_>,
-        buf: &mut [u8],
-        info: RecvInfo,
-        is_server: bool,
-    ) -> Result<(Token, usize)> {
-        let mut conn = self.lock_conn_with(scid, LocKind::Recv)?;
+    /// Open a outbound stream.
+    pub fn stream_open(&self, token: Token, kind: StreamKind) -> Result<u64> {
+        let state = self.state.lock();
+        let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        if is_server && !conn.is_server() {
-            panic!("dispatch packet to non-server connection.");
-        }
+        conn.borrow_mut().stream_open(kind, |ctx| {
+            conn.borrow_mut().unlock(
+                ctx.lock_count,
+                false,
+                state.readiness.borrow_mut().deref_mut(),
+            )
+        })
+    }
 
-        match conn.recv(buf, info) {
-            Ok(recv_size) => {
-                log::trace!(
-                    "Connection recv, scid={:?}, len={}",
-                    conn.source_id(),
-                    recv_size
-                );
+    /// Shutdown a stream.
+    pub fn stream_shutdown(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
+        let state = self.state.lock();
+        let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-                Ok((conn.token, recv_size))
-            }
-            Err(err) => {
-                log::error!("Connection recv, scid={:?}, err={}", conn.source_id(), err);
-                Err(Error::Quiche(err))
-            }
-        }
+        conn.borrow_mut().stream_shutdown(stream_id, err, |ctx| {
+            conn.borrow_mut().unlock(
+                ctx.lock_count,
+                false,
+                state.readiness.borrow_mut().deref_mut(),
+            )
+        })
     }
 
     /// Writes data to a stream.
@@ -196,12 +297,14 @@ impl Group {
         buf: &[u8],
         fin: bool,
     ) -> Result<usize> {
-        let mut conn = self.lock_conn(token, LocKind::StreamSend(stream_id, buf.len()))?;
-
-        // assert!(
-        //     conn.is_established() || conn.is_in_early_data(),
-        //     "Call stream send before connection established."
-        // );
+        let mut conn = lock!(
+            self,
+            token,
+            LocKind::StreamSend {
+                id: stream_id,
+                len: buf.len()
+            }
+        );
 
         match conn.stream_send(stream_id, buf, fin) {
             Ok(send_size) => {
@@ -244,7 +347,7 @@ impl Group {
         stream_id: u64,
         buf: &mut [u8],
     ) -> Result<(usize, bool)> {
-        let mut conn = self.lock_conn(token, LocKind::StreamRecv(stream_id))?;
+        let mut conn = lock!(self, token, LocKind::StreamRecv(stream_id));
 
         match conn.stream_recv(stream_id, buf) {
             Ok((recv_size, fin)) => {
@@ -278,62 +381,10 @@ impl Group {
         }
     }
 
-    /// Close a connection.
-    pub fn close(&self, token: Token) -> Result<()> {
-        self.registration
-            .lock()
-            .close(token, DEFAULT_RELEASE_TIMER_THRESHOLD)
-    }
-
-    /// Try open a new outbound stream.
-    pub fn stream_open(&self, token: Token) -> Result<u64> {
-        self.registration
-            .lock()
-            .stream_open(token, DEFAULT_RELEASE_TIMER_THRESHOLD)
-    }
-
-    /// Close a stream.
-    pub fn stream_close(&self, token: Token, stream_id: u64) -> Result<()> {
-        self.registration
-            .lock()
-            .stream_close(token, stream_id, DEFAULT_RELEASE_TIMER_THRESHOLD)
-    }
-
-    /// Wait for readiness events
-    pub fn poll(&self, events: &mut Vec<Event>, timeout: Option<Duration>) -> Result<()> {
-        let timeout = timeout.map(|timeout| Instant::now() + timeout);
-
-        let mut state = self.registration.lock();
-
-        let readiness = unsafe { state.readiness() };
-
-        loop {
-            let next_release = readiness.poll(events);
-
-            if !events.is_empty()
-                || timeout
-                    .filter(|timeout| !(Instant::now() < *timeout))
-                    .is_some()
-            {
-                return Ok(());
-            }
-
-            let timeout = min_of_some(timeout, next_release);
-
-            if let Some(timeout) = timeout {
-                self.condvar.wait_until(&mut state, timeout);
-            } else {
-                self.condvar.wait(&mut state);
-            }
-        }
-    }
-
     /// Waits for readiness events without blocking current thread and returns possible retry time duration.
-    pub fn non_blocking_poll(&self, events: &mut Vec<Event>) -> Option<Instant> {
-        let mut state = self.registration.lock();
+    pub fn poll(&self, events: &mut Vec<Event>) -> Option<Instant> {
+        let state = self.state.lock();
 
-        let readiness = unsafe { state.readiness() };
-
-        readiness.poll(events)
+        state.readiness.borrow_mut().poll(events)
     }
 }

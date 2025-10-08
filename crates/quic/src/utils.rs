@@ -65,3 +65,13 @@ pub(crate) fn random_conn_id() -> ConnectionId<'static> {
 
     ConnectionId::from_vec(buf)
 }
+
+/// Returns true if the stream was created locally.
+pub(crate) fn is_local(stream_id: u64, is_server: bool) -> bool {
+    (stream_id & 0x1) == (is_server as u64)
+}
+
+/// Returns true if the stream is bidirectional.
+pub(crate) fn is_bidi(stream_id: u64) -> bool {
+    (stream_id & 0x2) == 0
+}
