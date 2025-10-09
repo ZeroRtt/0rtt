@@ -14,7 +14,6 @@ pub(crate) fn min_of_some<T: Ord>(v1: Option<T>, v2: Option<T>) -> Option<T> {
 pub(crate) fn delay_send(
     conn: &quiche::Connection,
     now: Instant,
-    release_timer_threshold: Duration,
     send_done: bool,
 ) -> Option<Instant> {
     let release_time = conn
@@ -30,11 +29,6 @@ pub(crate) fn delay_send(
             None
         }
     };
-
-    // check with `release_timer_threshold`
-    let release_time = release_time.filter(|time| {
-        time.checked_duration_since(now).unwrap_or_default() > release_timer_threshold
-    });
 
     log::trace!(
         "id={}, next_release_time={:?}",

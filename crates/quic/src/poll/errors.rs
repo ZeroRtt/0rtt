@@ -1,3 +1,5 @@
+//! Types for handle this crate's errors.
+
 use std::task::Poll;
 
 /// A `poll` error.

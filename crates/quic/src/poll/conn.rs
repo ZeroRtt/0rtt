@@ -6,7 +6,7 @@ use std::{
     collections::HashSet,
     fmt::Debug,
     ops::{Deref, DerefMut},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use quiche::Shutdown;
@@ -142,8 +142,6 @@ pub struct QuicConn {
     read_lock_count: usize,
     /// established status.
     established: bool,
-    /// ...
-    release_timer_threshold: Duration,
     /// wrapped `quiche::Connection`.
     wrapped: UnsafeCell<quiche::Connection>,
 }
@@ -156,11 +154,7 @@ impl From<QuicConn> for quiche::Connection {
 }
 
 impl QuicConn {
-    pub fn new(
-        token: Token,
-        wrapped: quiche::Connection,
-        release_timer_threshold: Duration,
-    ) -> Self {
+    pub fn new(token: Token, wrapped: quiche::Connection) -> Self {
         Self {
             token,
             local_stream_bidi_next: if wrapped.is_server() { 0x01 } else { 0x0 },
@@ -171,7 +165,6 @@ impl QuicConn {
             reties: Default::default(),
             lock_count: Default::default(),
             read_lock_count: 0,
-            release_timer_threshold,
             established: wrapped.is_established(),
             wrapped: UnsafeCell::new(wrapped),
         }
@@ -244,18 +237,18 @@ impl QuicConn {
             unsafe { self.wrapped.get().as_mut().unwrap() },
             kind,
         ) {
-            Err(Error::Retry) => {}
+            Err(Error::Retry) => {
+                self.reties.insert(LocKind::StreamOpen(kind));
+
+                self.unlock(_guard.lock_count, false, readiness);
+
+                Err(Error::Retry)
+            }
             r => {
                 self.unlock(_guard.lock_count, false, readiness);
-                return r;
+                r
             }
         }
-
-        self.reties.insert(LocKind::StreamOpen(kind));
-
-        self.unlock(_guard.lock_count, false, readiness);
-
-        Err(Error::Retry)
     }
 
     /// Shutdown specific stream's read/write.
@@ -350,7 +343,7 @@ impl QuicConn {
     }
 
     /// Unlock this connection.
-    pub fn unlock(&mut self, lock_count: u64, send_done: bool, readiness: &mut Readiness) {
+    pub fn unlock(&mut self, lock_count: u64, send_done: bool, readiness: &mut Readiness) -> bool {
         assert!(self.locker != LocKind::None);
         assert_eq!(self.lock_count, lock_count);
 
@@ -371,7 +364,7 @@ impl QuicConn {
         self.handle_retry_events(conn, readiness);
         self.handle_stream_state_changed(conn, readiness);
         self.handle_send(conn, send_done, readiness);
-        self.handle_state_changed(conn, readiness);
+        self.handle_state_changed(conn, readiness)
     }
 
     fn handle_retry_events(&mut self, conn: &mut quiche::Connection, readiness: &mut Readiness) {
@@ -421,10 +414,12 @@ impl QuicConn {
                                 },
                                 None,
                             );
+                        } else {
+                            self.reties.insert(LocKind::StreamOpen(stream_kind));
                         }
                     }
                     StreamKind::Bidi => {
-                        if conn.peer_streams_left_uni() > 0 {
+                        if conn.peer_streams_left_bidi() > 0 {
                             readiness.insert(
                                 Event {
                                     token: self.token,
@@ -435,6 +430,8 @@ impl QuicConn {
                                 },
                                 None,
                             );
+                        } else {
+                            self.reties.insert(LocKind::StreamOpen(stream_kind));
                         }
                     }
                 },
@@ -523,7 +520,11 @@ impl QuicConn {
         }
     }
 
-    fn handle_state_changed(&mut self, conn: &mut quiche::Connection, readiness: &mut Readiness) {
+    fn handle_state_changed(
+        &mut self,
+        conn: &mut quiche::Connection,
+        readiness: &mut Readiness,
+    ) -> bool {
         if !self.established && conn.is_established() {
             self.established = true;
 
@@ -563,6 +564,10 @@ impl QuicConn {
                 },
                 None,
             );
+
+            true
+        } else {
+            false
         }
     }
 
@@ -676,7 +681,7 @@ impl QuicConn {
         let now = Instant::now();
 
         // check if the connection has data to send.
-        let delay_to = delay_send(conn, now, self.release_timer_threshold, send_done);
+        let delay_to = delay_send(conn, now, send_done);
 
         if send_done && delay_to.is_none() {
             readiness.remove(Event {

@@ -89,11 +89,7 @@ impl Group {
                 wrapped.trace_id()
             );
 
-            let conn = RefCell::new(QuicConn::new(
-                token,
-                wrapped,
-                DEFAULT_RELEASE_TIMER_THRESHOLD,
-            ));
+            let conn = RefCell::new(QuicConn::new(token, wrapped));
 
             let guard = conn.borrow_mut().try_lock(LocKind::ReadLock, |context| {
                 conn.borrow_mut().unlock(
@@ -135,7 +131,7 @@ impl Group {
 
     fn unlock(&self, ctx: LockContext) {
         let state = self.state.lock();
-        state
+        if state
             .conns
             .get(&ctx.token)
             .expect("Unlock.")
@@ -144,7 +140,16 @@ impl Group {
                 ctx.lock_count,
                 ctx.send_done,
                 state.readiness.borrow_mut().deref_mut(),
+            )
+        {
+            log::trace!(
+                "automatic deregister closed connection, token={:?}",
+                ctx.token
             );
+
+            drop(state);
+            _ = self.deregister(ctx.token);
+        }
     }
 
     /// Process a packet recv.
