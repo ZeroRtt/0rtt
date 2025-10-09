@@ -1490,6 +1490,7 @@ version = "0.1.2"
 dependencies = [
  "boring",
  "divan",
+ "fixedbuf",
  "log",
  "parking_lot",
  "pretty_env_logger",

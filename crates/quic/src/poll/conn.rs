@@ -11,7 +11,7 @@ use std::{
 
 use quiche::Shutdown;
 
-use crate::{
+use crate::poll::{
     Error, Event, EventKind, Readiness, Result, StreamKind, Token,
     utils::{delay_send, is_bidi, is_local},
 };
@@ -127,11 +127,11 @@ pub struct QuicConn {
     /// The generator for next local opening bidirectional stream.
     local_stream_bidi_next: u64,
     /// Maximum bidirectional stream id seen.
-    remote_stream_bidi_seen: u64,
+    remote_stream_bidi_seen: Option<u64>,
     /// The generator for next local opening unidirectional stream.
     local_stream_uni_next: u64,
     /// Maximum unidirectional stream id seen.
-    remote_stream_uni_seen: u64,
+    remote_stream_uni_seen: Option<u64>,
     /// lock kind.
     locker: LocKind,
     /// retry ops.
@@ -165,7 +165,7 @@ impl QuicConn {
             token,
             local_stream_bidi_next: if wrapped.is_server() { 0x01 } else { 0x0 },
             remote_stream_bidi_seen: Default::default(),
-            local_stream_uni_next: if wrapped.is_server() { 0x03 } else { 0x2 },
+            local_stream_uni_next: if wrapped.is_server() { 0x03 } else { 0x02 },
             remote_stream_uni_seen: Default::default(),
             locker: Default::default(),
             reties: Default::default(),
@@ -177,17 +177,15 @@ impl QuicConn {
         }
     }
 
-    /// Try lock this connection.
-    pub fn try_lock<F>(&mut self, kind: LocKind, drop: F) -> Result<QuicConnGuard<F>>
-    where
-        F: FnOnce(LockContext),
-    {
-        match kind {
+    fn try_lock_prv(&mut self, kind: LocKind) -> Result<LockContext> {
+        match self.locker {
             LocKind::None => {
                 if kind == LocKind::ReadLock {
                     assert_eq!(self.read_lock_count, 0);
                     self.read_lock_count += 1;
                 }
+
+                self.locker = kind;
             }
             LocKind::ReadLock if kind == LocKind::ReadLock => {
                 assert!(self.read_lock_count > 0);
@@ -201,115 +199,86 @@ impl QuicConn {
             }
         }
 
-        Ok(QuicConnGuard {
-            lock: LockContext {
-                token: self.token,
-                lock_count: self.lock_count,
-                send_done: false,
-            },
-            drop: Some(drop),
-            wrapped: unsafe { self.wrapped.get().as_mut().unwrap() },
+        Ok(LockContext {
+            token: self.token,
+            lock_count: self.lock_count,
+            send_done: false,
         })
     }
 
-    /// Unlock this connection.
-    pub fn unlock(&mut self, lock_count: u64, send_done: bool, readiness: &mut Readiness) {
-        assert!(self.locker != LocKind::None);
-        assert_eq!(self.lock_count, lock_count);
-
-        if self.locker == LocKind::ReadLock {
-            self.read_lock_count -= 1;
-            /// all read lock are released.
-            if self.read_lock_count == 0 {
-                self.lock_count += 1;
-                self.locker = LocKind::None;
-            }
-        } else {
-            self.lock_count += 1;
-            self.locker = LocKind::None;
-        }
-
-        let conn = unsafe { self.wrapped.get().as_mut().unwrap() };
-
-        self.handle_retry_events(conn, readiness);
-        self.handle_stream_state_changed(conn, readiness);
-        self.handle_send(conn, send_done, readiness);
-        self.handle_state_changed(conn, readiness);
-    }
-
     /// Close this connection.
-    pub fn close<F>(
+    pub fn close(
         &mut self,
         app: bool,
         err: u64,
         reason: Cow<'static, [u8]>,
-        drop: F,
-    ) -> Result<()>
-    where
-        F: FnOnce(LockContext),
-    {
-        let guard = self.try_lock(
-            LocKind::Close {
-                app,
-                err,
-                reason: reason.clone(),
-            },
-            drop,
-        )?;
+        readiness: &mut Readiness,
+    ) -> Result<()> {
+        let _guard = self.try_lock_prv(LocKind::Close {
+            app,
+            err,
+            reason: reason.clone(),
+        })?;
 
-        /// safety: state is protected by previous level locker.
+        // safety: state is protected by previous level locker.
         let conn = unsafe { self.wrapped.get().as_mut().unwrap() };
 
         if let Err(err) = conn.close(app, err, &reason) {
             if err != quiche::Error::Done {
+                self.unlock(_guard.lock_count, false, readiness);
                 return Err(err.into());
             }
         }
+
+        self.unlock(_guard.lock_count, false, readiness);
 
         Ok(())
     }
 
     /// Shutdown specific stream's read/write.
-    pub fn stream_open<F>(&mut self, kind: StreamKind, drop: F) -> Result<u64>
-    where
-        F: FnOnce(LockContext),
-    {
-        let guard = self.try_lock(LocKind::StreamOpen(kind), drop)?;
+    pub fn stream_open(&mut self, kind: StreamKind, readiness: &mut Readiness) -> Result<u64> {
+        let _guard = self.try_lock_prv(LocKind::StreamOpen(kind))?;
 
         match self.stream_open_prv(
-            /// safety: state is protected by previous level locker.
-            unsafe {
-                self.wrapped.get().as_mut().unwrap()
-            },
+            // safety: state is protected by previous level locker.
+            unsafe { self.wrapped.get().as_mut().unwrap() },
             kind,
         ) {
-            Ok(stream_id) => return Ok(stream_id),
             Err(Error::Retry) => {}
-            Err(err) => return Err(err),
+            r => {
+                self.unlock(_guard.lock_count, false, readiness);
+                return r;
+            }
         }
 
         self.reties.insert(LocKind::StreamOpen(kind));
+
+        self.unlock(_guard.lock_count, false, readiness);
 
         Err(Error::Retry)
     }
 
     /// Shutdown specific stream's read/write.
-    pub fn stream_shutdown<F>(&mut self, stream_id: u64, err: u64, drop: F) -> Result<()>
-    where
-        F: FnOnce(LockContext),
-    {
+    pub fn stream_shutdown(
+        &mut self,
+        stream_id: u64,
+        err: u64,
+        readiness: &mut Readiness,
+    ) -> Result<()> {
         let kind = LocKind::StreamClose { id: stream_id, err };
 
-        let guard = self.try_lock(kind, drop)?;
+        let _guard = self.try_lock_prv(kind)?;
 
-        self.stream_shutdown_prv(
-            /// safety: state is protected by previous level locker.
-            unsafe {
-                self.wrapped.get().as_mut().unwrap()
-            },
+        let r = self.stream_shutdown_prv(
+            // safety: state is protected by previous level locker.
+            unsafe { self.wrapped.get().as_mut().unwrap() },
             stream_id,
             err,
-        )
+        );
+
+        self.unlock(_guard.lock_count, false, readiness);
+
+        r
     }
 
     fn stream_shutdown_prv(
@@ -366,6 +335,43 @@ impl QuicConn {
         );
 
         return Ok(stream_id);
+    }
+
+    /// Try lock this connection.
+    pub fn try_lock<F>(&mut self, kind: LocKind, drop: F) -> Result<QuicConnGuard<F>>
+    where
+        F: FnOnce(LockContext),
+    {
+        Ok(QuicConnGuard {
+            lock: self.try_lock_prv(kind)?,
+            drop: Some(drop),
+            wrapped: unsafe { self.wrapped.get().as_mut().unwrap() },
+        })
+    }
+
+    /// Unlock this connection.
+    pub fn unlock(&mut self, lock_count: u64, send_done: bool, readiness: &mut Readiness) {
+        assert!(self.locker != LocKind::None);
+        assert_eq!(self.lock_count, lock_count);
+
+        if self.locker == LocKind::ReadLock {
+            self.read_lock_count -= 1;
+            // all read lock are released.
+            if self.read_lock_count == 0 {
+                self.lock_count += 1;
+                self.locker = LocKind::None;
+            }
+        } else {
+            self.lock_count += 1;
+            self.locker = LocKind::None;
+        }
+
+        let conn = unsafe { self.wrapped.get().as_mut().unwrap() };
+
+        self.handle_retry_events(conn, readiness);
+        self.handle_stream_state_changed(conn, readiness);
+        self.handle_send(conn, send_done, readiness);
+        self.handle_state_changed(conn, readiness);
     }
 
     fn handle_retry_events(&mut self, conn: &mut quiche::Connection, readiness: &mut Readiness) {
@@ -520,16 +526,30 @@ impl QuicConn {
     fn handle_state_changed(&mut self, conn: &mut quiche::Connection, readiness: &mut Readiness) {
         if !self.established && conn.is_established() {
             self.established = true;
-            readiness.insert(
-                Event {
-                    token: self.token,
-                    kind: EventKind::Connected,
-                    is_server: conn.is_server(),
-                    is_error: false,
-                    stream_id: 0,
-                },
-                None,
-            );
+
+            if conn.is_server() {
+                readiness.insert(
+                    Event {
+                        token: self.token,
+                        kind: EventKind::Accept,
+                        is_server: conn.is_server(),
+                        is_error: false,
+                        stream_id: 0,
+                    },
+                    None,
+                );
+            } else {
+                readiness.insert(
+                    Event {
+                        token: self.token,
+                        kind: EventKind::Connected,
+                        is_server: conn.is_server(),
+                        is_error: false,
+                        stream_id: 0,
+                    },
+                    None,
+                );
+            }
         }
 
         if conn.is_closed() {
@@ -565,38 +585,84 @@ impl QuicConn {
         }
 
         while let Some(stream_id) = conn.stream_readable_next() {
-            if !is_local(stream_id, conn.is_server()) && self.remote_stream_bidi_seen < stream_id {
-                if is_bidi(stream_id) {
-                    if self.remote_stream_bidi_seen < stream_id {
-                        self.remote_stream_bidi_seen = stream_id;
+            if !is_local(stream_id, conn.is_server()) {
+                self.handle_accept(conn, stream_id, readiness);
+            }
+        }
+    }
 
-                        readiness.insert(
-                            Event {
-                                kind: EventKind::StreamAccept,
-                                is_server: conn.is_server(),
-                                is_error: false,
-                                token: self.token,
-                                stream_id,
-                            },
-                            None,
-                        );
-                    }
-                } else {
-                    if self.remote_stream_uni_seen < stream_id {
-                        self.remote_stream_uni_seen = stream_id;
+    fn handle_accept(
+        &mut self,
+        conn: &mut quiche::Connection,
+        new: u64,
+        readiness: &mut Readiness,
+    ) {
+        static MAX_OPEN_STREAMS: u64 = 5;
 
-                        readiness.insert(
-                            Event {
-                                kind: EventKind::StreamAccept,
-                                is_server: conn.is_server(),
-                                is_error: false,
-                                token: self.token,
-                                stream_id,
-                            },
-                            None,
-                        );
-                    }
+        let is_server = conn.is_server();
+
+        if is_bidi(new) {
+            let mut remote_stream_bidi_seen = self
+                .remote_stream_bidi_seen
+                .map(|v| v + 4)
+                .unwrap_or_else(|| if is_server { 0x0 } else { 0x01 });
+
+            if new > remote_stream_bidi_seen
+                && (new - remote_stream_bidi_seen) / 4 > MAX_OPEN_STREAMS
+            {
+                log::error!("Out of range, scid={}, stream_id={}", conn.trace_id(), new);
+                _ = conn.close(false, 0x0, b"stream_id out of range.");
+            }
+
+            loop {
+                if remote_stream_bidi_seen > new {
+                    self.remote_stream_bidi_seen = Some(new);
+                    break;
                 }
+
+                readiness.insert(
+                    Event {
+                        kind: EventKind::StreamAccept,
+                        is_server,
+                        is_error: false,
+                        token: self.token,
+                        stream_id: remote_stream_bidi_seen,
+                    },
+                    None,
+                );
+
+                remote_stream_bidi_seen += 4;
+            }
+        } else {
+            let mut remote_stream_uni_seen = self
+                .remote_stream_uni_seen
+                .map(|v| v + 4)
+                .unwrap_or_else(|| if is_server { 0x2 } else { 0x03 });
+
+            if new > remote_stream_uni_seen && (new - remote_stream_uni_seen) / 4 > MAX_OPEN_STREAMS
+            {
+                log::error!("Out of range, scid={}, stream_id={}", conn.trace_id(), new);
+                _ = conn.close(false, 0x0, b"stream_id out of range.");
+            }
+
+            loop {
+                if remote_stream_uni_seen > new {
+                    self.remote_stream_uni_seen = Some(new);
+                    break;
+                }
+
+                readiness.insert(
+                    Event {
+                        kind: EventKind::StreamAccept,
+                        is_server,
+                        is_error: false,
+                        token: self.token,
+                        stream_id: remote_stream_uni_seen,
+                    },
+                    None,
+                );
+
+                remote_stream_uni_seen += 4;
             }
         }
     }

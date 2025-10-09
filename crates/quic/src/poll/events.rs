@@ -1,8 +1,12 @@
-use std::{cmp::Reverse, collections::HashSet, time::Instant};
+use std::{
+    cmp::Reverse,
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use priority_queue::PriorityQueue;
 
-use crate::utils::is_bidi;
+use crate::poll::utils::is_bidi;
 
 /// Type for readiness events.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
@@ -46,8 +50,7 @@ pub struct Event {
     pub is_server: bool,
     /// Event raised by an I/O error.
     pub is_error: bool,
-    /// Optional stream identifier for the event source.
-    /// The default value `0` indicates that the event source is not a QUIC stream.
+    /// The meaning of this field depends on the [`kind`](Self::kind) field.
     pub stream_id: u64,
 }
 
@@ -81,7 +84,11 @@ impl Readiness {
     /// Poll readiness events.
     ///
     /// If no ready messages are polled, return an optional wait time instant.
-    pub fn poll(&mut self, readiness: &mut Vec<Event>) -> Option<Instant> {
+    pub fn poll(
+        &mut self,
+        readiness: &mut Vec<Event>,
+        release_timer_threshold: Duration,
+    ) -> Option<Instant> {
         assert!(
             readiness.is_empty(),
             "The input readiness Vec<_> is not empty."
@@ -96,7 +103,8 @@ impl Readiness {
         let now = Instant::now();
 
         while let Some(deadline) = self.delayed.peek().map(|(_, instant)| instant.0) {
-            if !(deadline > now) {
+            if !(deadline.checked_duration_since(now).unwrap_or_default() > release_timer_threshold)
+            {
                 let (event, _) = self.delayed.pop().unwrap();
 
                 readiness.push(event);

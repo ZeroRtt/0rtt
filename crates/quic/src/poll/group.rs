@@ -9,7 +9,7 @@ use std::{
 use parking_lot::{Mutex, RwLock};
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
-use crate::{
+use crate::poll::{
     Error, Event, Readiness, Result, StreamKind, Token,
     conn::{LocKind, LockContext, QuicConn},
     utils::release_time,
@@ -32,12 +32,6 @@ macro_rules! lock {
 
         conn
     }};
-}
-
-/// Poll api.
-pub trait Poll {
-    /// poll events, and returns next release time.
-    fn poll(&mut self, events: &mut Vec<Event>) -> Option<Instant>;
 }
 
 #[derive(Default)]
@@ -160,7 +154,6 @@ impl Group {
         scid: &ConnectionId<'_>,
         buf: &mut [u8],
         info: RecvInfo,
-        is_server: bool,
     ) -> Result<(Token, usize)> {
         let token = self
             .scids
@@ -171,9 +164,9 @@ impl Group {
 
         let mut conn = lock!(self, token, LocKind::Recv);
 
-        if is_server && !conn.is_server() {
-            panic!("dispatch packet to non-server connection.");
-        }
+        // if is_server && !conn.is_server() {
+        //     panic!("dispatch packet to non-server connection.");
+        // }
 
         match conn.recv(buf, info) {
             Ok(recv_size) => {
@@ -197,7 +190,7 @@ impl Group {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-        self.recv_(&header.dcid, buf, info, false)
+        self.recv_(&header.dcid, buf, info)
             .map(|(_, recv_size)| recv_size)
     }
 
@@ -252,13 +245,8 @@ impl Group {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        conn.borrow_mut().close(app, err, reason, |ctx| {
-            conn.borrow_mut().unlock(
-                ctx.lock_count,
-                false,
-                state.readiness.borrow_mut().deref_mut(),
-            )
-        })
+        conn.borrow_mut()
+            .close(app, err, reason, state.readiness.borrow_mut().deref_mut())
     }
 
     /// Open a outbound stream.
@@ -266,13 +254,8 @@ impl Group {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        conn.borrow_mut().stream_open(kind, |ctx| {
-            conn.borrow_mut().unlock(
-                ctx.lock_count,
-                false,
-                state.readiness.borrow_mut().deref_mut(),
-            )
-        })
+        conn.borrow_mut()
+            .stream_open(kind, state.readiness.borrow_mut().deref_mut())
     }
 
     /// Shutdown a stream.
@@ -280,13 +263,8 @@ impl Group {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        conn.borrow_mut().stream_shutdown(stream_id, err, |ctx| {
-            conn.borrow_mut().unlock(
-                ctx.lock_count,
-                false,
-                state.readiness.borrow_mut().deref_mut(),
-            )
-        })
+        conn.borrow_mut()
+            .stream_shutdown(stream_id, err, state.readiness.borrow_mut().deref_mut())
     }
 
     /// Writes data to a stream.
@@ -385,6 +363,9 @@ impl Group {
     pub fn poll(&self, events: &mut Vec<Event>) -> Option<Instant> {
         let state = self.state.lock();
 
-        state.readiness.borrow_mut().poll(events)
+        state
+            .readiness
+            .borrow_mut()
+            .poll(events, DEFAULT_RELEASE_TIMER_THRESHOLD)
     }
 }
