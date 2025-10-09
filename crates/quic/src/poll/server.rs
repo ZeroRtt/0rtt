@@ -6,6 +6,7 @@ use std::{
 };
 
 use boring::sha::Sha256;
+use crossbeam_utils::sync::Unparker;
 use quiche::{ConnectionId, Header, RecvInfo, SendInfo};
 
 use crate::poll::{Error, Group, Result, utils::random_conn_id};
@@ -330,6 +331,7 @@ pub trait ServerGroup {
         buf: &mut [u8],
         recv_size: usize,
         recv_info: RecvInfo,
+        unpark: Option<Unparker>,
     ) -> Result<(usize, SendInfo)>;
 }
 
@@ -340,11 +342,12 @@ impl ServerGroup for Group {
         buf: &mut [u8],
         recv_size: usize,
         recv_info: RecvInfo,
+        unpark: Option<Unparker>,
     ) -> Result<(usize, SendInfo)> {
         let header = quiche::Header::from_slice(&mut buf[..recv_size], quiche::MAX_CONN_ID_LEN)
             .map_err(Error::Quiche)?;
 
-        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info) {
+        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, unpark) {
             Ok((token, _)) => match self.send(token, buf) {
                 Err(Error::Busy) | Err(Error::Retry) => Ok((
                     0,
@@ -360,7 +363,14 @@ impl ServerGroup for Group {
                 Ok(Handshake::Accept(conn)) => {
                     let token = self.register(conn)?;
 
-                    self.recv_(&header.dcid, &mut buf[..recv_size], recv_info)?;
+                    // Newly registered connections should be idle.
+                    match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, None) {
+                        Ok(_) => {}
+                        Err(Error::Busy) | Err(Error::Retry) => {
+                            unreachable!("Newly registered connections should be idle");
+                        }
+                        Err(err) => return Err(err),
+                    }
 
                     match self.send(token, buf) {
                         Err(Error::Busy) | Err(Error::Retry) => Ok((

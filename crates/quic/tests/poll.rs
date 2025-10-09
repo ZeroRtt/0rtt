@@ -97,6 +97,7 @@ fn transfer(acceptor: &mut Acceptor, group: &Group, from: Token) -> Poll<Result<
                     from: send_info.from,
                     to: send_info.to,
                 },
+                None,
             )
             .unwrap();
     }

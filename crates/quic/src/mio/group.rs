@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam_utils::sync::Parker;
 use mio::{Events, Interest, Waker, net::UdpSocket};
 use parking_lot::Mutex;
 use quiche::RecvInfo;
@@ -288,6 +289,8 @@ impl Group {
     fn on_udp_recv(&self, poll_state: &mut PollState, token: mio::Token) -> Result<()> {
         let quic_socket = poll_state.sockets.get_mut(token.0).expect("Quic socket");
 
+        let parker = Parker::new();
+
         loop {
             let mut buf = QuicBuf::new();
 
@@ -308,6 +311,7 @@ impl Group {
                             from,
                             to: quic_socket.local_addr(),
                         },
+                        Some(parker.unparker().clone()),
                     ) {
                         Ok((send_size, send_info)) => {
                             if send_size == 0 {
@@ -316,16 +320,21 @@ impl Group {
                             }
 
                             buf.writable_consume(send_size);
+
                             match quic_socket.send_to(buf, send_info.to) {
                                 Ok(_) => {}
                                 Err(QuicSocketError::IsFull(_)) => {
-                                    log::warn!("udp send queue is full, socket={}", token.0);
+                                    log::warn!(
+                                        "`QuicSocket` sending queue is full, socket={}",
+                                        token.0
+                                    );
                                 }
                                 Err(err) => return Err(err.into()),
                             }
                         }
                         Err(crate::poll::Error::Busy) | Err(crate::poll::Error::Retry) => {
-                            // retry immedately.
+                            parker.park();
+                            // try agian.
                             continue;
                         }
                         Err(_) => {}
@@ -334,19 +343,26 @@ impl Group {
                     break;
                 }
             } else {
+                let header =
+                    quiche::Header::from_slice(buf.readable_buf_mut(), quiche::MAX_CONN_ID_LEN)
+                        .map_err(crate::poll::Error::Quiche)?;
+
                 // for client-side dispatching.
                 loop {
-                    match self.group.recv(
+                    match self.group.recv_(
+                        &header.dcid,
                         buf.readable_buf_mut(),
                         RecvInfo {
                             from,
                             to: quic_socket.local_addr(),
                         },
+                        Some(parker.unparker().clone()),
                     ) {
                         Ok(_) => {}
                         // Current connection is busy.
                         Err(crate::poll::Error::Busy) | Err(crate::poll::Error::Retry) => {
-                            // retry immedately.
+                            parker.park();
+                            // try agian.
                             continue;
                         }
                         Err(_) => {}
@@ -363,5 +379,107 @@ impl Group {
         _ = socket.flush().would_block()?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quiche::Config;
+
+    use crate::poll::server::SimpleAddressValidator;
+
+    use super::*;
+
+    #[allow(unused)]
+    fn mock_config(is_server: bool) -> Config {
+        use std::path::Path;
+
+        let mut config = Config::new(quiche::PROTOCOL_VERSION).unwrap();
+
+        config.set_initial_max_data(10_000_000);
+        config.set_initial_max_stream_data_bidi_local(1024 * 1024);
+        config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
+        config.set_initial_max_stream_data_uni(1024 * 1024);
+        config.set_initial_max_streams_bidi(1);
+        config.set_initial_max_streams_uni(1);
+
+        config.verify_peer(true);
+
+        // if is_server {
+        let root_path = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+        log::debug!("test run dir {:?}", root_path);
+
+        if is_server {
+            config
+                .load_cert_chain_from_pem_file(root_path.join("cert/server.crt").to_str().unwrap())
+                .unwrap();
+
+            config
+                .load_priv_key_from_pem_file(root_path.join("cert/server.key").to_str().unwrap())
+                .unwrap();
+        } else {
+            config
+                .load_cert_chain_from_pem_file(root_path.join("cert/client.crt").to_str().unwrap())
+                .unwrap();
+
+            config
+                .load_priv_key_from_pem_file(root_path.join("cert/client.key").to_str().unwrap())
+                .unwrap();
+        }
+
+        config
+            .load_verify_locations_from_file(root_path.join("cert/rasi_ca.pem").to_str().unwrap())
+            .unwrap();
+
+        config.set_application_protos(&[b"test"]).unwrap();
+
+        config.set_max_idle_timeout(60000);
+
+        config
+    }
+
+    #[test]
+    fn test_poll_timeout() {
+        let group = Group::bind(
+            "127.0.0.1:0",
+            Some(Acceptor::new(
+                mock_config(true),
+                SimpleAddressValidator::new(Duration::from_secs(10)),
+            )),
+        )
+        .unwrap();
+
+        let mut events = vec![];
+
+        group
+            .poll(&mut events, Some(Duration::from_millis(50)))
+            .unwrap();
+
+        assert_eq!(events.len(), 0);
+
+        let event = Event {
+            token: Token(0),
+            kind: EventKind::Accept,
+            is_server: false,
+            is_error: false,
+            stream_id: 1,
+        };
+
+        group
+            .group
+            .readiness(event, Some(Instant::now() + Duration::from_millis(100)));
+
+        group
+            .poll(&mut events, Some(Duration::from_millis(50)))
+            .unwrap();
+
+        assert_eq!(events.len(), 0);
+
+        group
+            .poll(&mut events, Some(Duration::from_millis(50)))
+            .unwrap();
+
+        assert_eq!(events[0], event);
     }
 }

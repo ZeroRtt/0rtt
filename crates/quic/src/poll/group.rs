@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam_utils::sync::Unparker;
 use parking_lot::{Mutex, RwLock};
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
@@ -39,6 +40,7 @@ struct State {
     token_next: u32,
     conns: HashMap<Token, RefCell<QuicConn>>,
     readiness: RefCell<Readiness>,
+    unparkers: HashMap<Token, Unparker>,
 }
 
 /// A group of `quiche:Connection`s.
@@ -130,7 +132,12 @@ impl Group {
     }
 
     fn unlock(&self, ctx: LockContext) {
-        let state = self.state.lock();
+        let mut state = self.state.lock();
+
+        if let Some(unparker) = state.unparkers.remove(&ctx.token) {
+            unparker.unpark();
+        }
+
         if state
             .conns
             .get(&ctx.token)
@@ -159,6 +166,7 @@ impl Group {
         scid: &ConnectionId<'_>,
         buf: &mut [u8],
         info: RecvInfo,
+        unparker: Option<Unparker>,
     ) -> Result<(Token, usize)> {
         let token = self
             .scids
@@ -167,7 +175,23 @@ impl Group {
             .ok_or_else(|| Error::NotFound)?
             .clone();
 
-        let mut conn = lock!(self, token, LocKind::Recv);
+        let mut state = self.state.lock();
+
+        if let Some(unparker) = unparker {
+            state.unparkers.insert(token, unparker);
+        }
+
+        let mut conn = state
+            .conns
+            .get(&token)
+            .expect("state: conn not found.")
+            .borrow_mut()
+            .try_lock(LocKind::Recv, |ctx| self.unlock(ctx))?;
+
+        // locked remove unparker.
+        state.unparkers.remove(&token);
+
+        drop(state);
 
         match conn.recv(buf, info) {
             Ok(recv_size) => {
@@ -191,7 +215,7 @@ impl Group {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-        self.recv_(&header.dcid, buf, info)
+        self.recv_(&header.dcid, buf, info, None)
             .map(|(_, recv_size)| recv_size)
     }
 
@@ -368,5 +392,11 @@ impl Group {
             .readiness
             .borrow_mut()
             .poll(events, DEFAULT_RELEASE_TIMER_THRESHOLD)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn readiness(&self, event: Event, delay_to: Option<Instant>) {
+        let state = self.state.lock();
+        state.readiness.borrow_mut().insert(event, delay_to);
     }
 }
