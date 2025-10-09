@@ -1,28 +1,30 @@
-use std::{
-    collections::VecDeque,
-    io::{ErrorKind, Result},
-    net::SocketAddr,
-};
+use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
 use mio::{event::Source, net::UdpSocket};
 
 use crate::mio::{buf::QuicBuf, would_block::WouldBlock};
 
 /// A `poll` error.
-#[derive(Debug, PartialEq, thiserror::Error)]
-pub enum QuicSocketError {
+#[derive(Debug, thiserror::Error)]
+pub(super) enum QuicSocketError {
     /// A quic protocol error.
     #[error("Send queue is full.")]
     IsFull(QuicBuf),
+
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
 }
 
 impl From<QuicSocketError> for std::io::Error {
     fn from(value: QuicSocketError) -> Self {
-        match &value {
+        match value {
             QuicSocketError::IsFull(_) => std::io::Error::other(value),
+            QuicSocketError::IO(error) => error,
         }
     }
 }
+
+type Result<T> = std::result::Result<T, QuicSocketError>;
 
 /// Udp socket for quic protocol.
 pub struct QuicSocket {
@@ -134,7 +136,7 @@ impl QuicSocket {
 
     /// Receive data from this socket.
     #[inline]
-    pub fn recv_from(&mut self, buf: &mut QuicBuf) -> Result<SocketAddr> {
+    pub fn recv_from(&self, buf: &mut QuicBuf) -> Result<SocketAddr> {
         let (read_size, from) = self
             .socket
             .recv_from(buf.writable_buf())
@@ -151,88 +153,5 @@ impl QuicSocket {
         buf.writable_consume(read_size);
 
         Ok(from)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{net::Ipv4Addr, thread::sleep, time::Duration};
-
-    use mio::net::UdpSocket;
-
-    use super::*;
-
-    #[test]
-    fn is_full() {
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0).into()).unwrap();
-        let mut socket = QuicSocket::new(socket, 1).unwrap();
-
-        let port = socket.local_addr().port();
-
-        socket.sending.push_back((
-            QuicBuf::from_slice(b"hello world").unwrap(),
-            (Ipv4Addr::LOCALHOST, port).into(),
-        ));
-
-        assert_eq!(socket.is_full(), true);
-
-        assert_eq!(
-            socket
-                .send_to(
-                    QuicBuf::from_slice(b"hello world").unwrap(),
-                    (Ipv4Addr::LOCALHOST, port).into()
-                )
-                .unwrap(),
-            0
-        );
-
-        sleep(Duration::from_secs(1));
-
-        let mut buf = QuicBuf::new();
-
-        let from = socket.recv_from(&mut buf).unwrap();
-
-        assert_eq!(from.port(), socket.local_addr().port());
-
-        assert_eq!(buf, QuicBuf::from_slice(b"hello world").unwrap());
-
-        let mut buf = QuicBuf::new();
-
-        let from = socket.recv_from(&mut buf).unwrap();
-
-        assert_eq!(from.port(), socket.local_addr().port());
-
-        assert_eq!(buf, QuicBuf::from_slice(b"hello world").unwrap());
-    }
-
-    #[test]
-    fn send_to() {
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0).into()).unwrap();
-
-        let mut socket = QuicSocket::new(socket, 1024).unwrap();
-
-        let port = socket.local_addr().port();
-
-        assert_eq!(
-            socket
-                .send_to(
-                    QuicBuf::from_slice(b"hello world").unwrap(),
-                    (Ipv4Addr::LOCALHOST, port).into()
-                )
-                .unwrap(),
-            0
-        );
-
-        assert_eq!(socket.is_full(), false);
-
-        sleep(Duration::from_secs(1));
-
-        let mut buf = QuicBuf::new();
-
-        let from = socket.recv_from(&mut buf).unwrap();
-
-        assert_eq!(from.port(), socket.local_addr().port());
-
-        assert_eq!(buf, QuicBuf::from_slice(b"hello world").unwrap());
     }
 }

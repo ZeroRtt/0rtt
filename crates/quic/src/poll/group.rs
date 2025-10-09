@@ -169,10 +169,6 @@ impl Group {
 
         let mut conn = lock!(self, token, LocKind::Recv);
 
-        // if is_server && !conn.is_server() {
-        //     panic!("dispatch packet to non-server connection.");
-        // }
-
         match conn.recv(buf, info) {
             Ok(recv_size) => {
                 log::trace!(

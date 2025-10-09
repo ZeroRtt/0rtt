@@ -27,10 +27,11 @@ pretty_env_logger = "0.5.0"
 test-fuzz = "7.2.4"
 
 [features]
-default = ["client","server","mio"]
+default = ["client","server","mio","futures"]
 client = ["rand"]
 server = ["rand"]
 mio = ["dep:mio"]
+futures = ["mio"]
 
 [[bench]]
 name = "group"

@@ -1,5 +1,5 @@
 mod conn;
-mod utils;
+pub(crate) mod utils;
 
 mod events;
 pub use events::*;
