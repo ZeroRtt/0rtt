@@ -481,5 +481,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(events[0], event);
+
+        events.clear();
+
+        group
+            .group
+            .readiness(event, Some(Instant::now() + Duration::from_millis(100)));
+
+        group
+            .poll(&mut events, Some(Duration::from_millis(150)))
+            .unwrap();
+
+        assert_eq!(events[0], event);
     }
 }
