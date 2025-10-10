@@ -311,7 +311,7 @@ impl Group {
                             from,
                             to: quic_socket.local_addr(),
                         },
-                        Some(parker.unparker().clone()),
+                        Some(parker.unparker()),
                     ) {
                         Ok((send_size, send_info)) => {
                             if send_size == 0 {
@@ -356,7 +356,7 @@ impl Group {
                             from,
                             to: quic_socket.local_addr(),
                         },
-                        Some(parker.unparker().clone()),
+                        Some(parker.unparker()),
                     ) {
                         Ok(_) => {}
                         // Current connection is busy.

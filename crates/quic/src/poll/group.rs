@@ -25,7 +25,7 @@ macro_rules! lock {
         let conn = state
             .conns
             .get(&$token)
-            .expect("state: conn not found.")
+            .ok_or_else(|| Error::NotFound)?
             .borrow_mut()
             .try_lock($kind, |ctx| $self.unlock(ctx))?;
 
@@ -166,7 +166,7 @@ impl Group {
         scid: &ConnectionId<'_>,
         buf: &mut [u8],
         info: RecvInfo,
-        unparker: Option<Unparker>,
+        unparker: Option<&Unparker>,
     ) -> Result<(Token, usize)> {
         let token = self
             .scids
@@ -177,19 +177,20 @@ impl Group {
 
         let mut state = self.state.lock();
 
-        if let Some(unparker) = unparker {
-            state.unparkers.insert(token, unparker);
-        }
-
-        let mut conn = state
+        let Ok(mut conn) = state
             .conns
             .get(&token)
-            .expect("state: conn not found.")
+            .ok_or_else(|| Error::NotFound)?
             .borrow_mut()
-            .try_lock(LocKind::Recv, |ctx| self.unlock(ctx))?;
+            .try_lock(LocKind::Recv, |ctx| self.unlock(ctx))
+        else {
+            // insert unparker.
+            if let Some(unparker) = unparker {
+                state.unparkers.insert(token, unparker.clone());
+            }
 
-        // locked remove unparker.
-        state.unparkers.remove(&token);
+            return Err(Error::Busy);
+        };
 
         drop(state);
 

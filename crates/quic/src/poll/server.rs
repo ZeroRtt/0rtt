@@ -331,7 +331,7 @@ pub trait ServerGroup {
         buf: &mut [u8],
         recv_size: usize,
         recv_info: RecvInfo,
-        unpark: Option<Unparker>,
+        unparker: Option<&Unparker>,
     ) -> Result<(usize, SendInfo)>;
 }
 
@@ -342,12 +342,12 @@ impl ServerGroup for Group {
         buf: &mut [u8],
         recv_size: usize,
         recv_info: RecvInfo,
-        unpark: Option<Unparker>,
+        unparker: Option<&Unparker>,
     ) -> Result<(usize, SendInfo)> {
         let header = quiche::Header::from_slice(&mut buf[..recv_size], quiche::MAX_CONN_ID_LEN)
             .map_err(Error::Quiche)?;
 
-        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, unpark) {
+        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, unparker) {
             Ok((token, _)) => match self.send(token, buf) {
                 Err(Error::Busy) | Err(Error::Retry) => Ok((
                     0,
