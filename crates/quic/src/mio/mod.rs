@@ -5,4 +5,5 @@ pub use group::*;
 
 mod buf;
 mod udp;
-mod would_block;
+
+pub(crate) mod would_block;

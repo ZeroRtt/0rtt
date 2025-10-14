@@ -12,7 +12,7 @@ use std::{
 use quiche::Shutdown;
 
 use crate::poll::{
-    Error, Event, EventKind, Readiness, Result, StreamKind, Token,
+    Error, Event, EventKind, Readiness, Result, StreamKind, Token, WouldBlock,
     utils::{delay_send, is_bidi, is_local},
 };
 
@@ -186,6 +186,7 @@ impl QuicConn {
             }
             _ => {
                 if kind.need_retry() {
+                    log::trace!("retry locker={:?}", kind);
                     self.reties.insert(kind);
                 }
                 return Err(Error::Busy);
@@ -207,11 +208,16 @@ impl QuicConn {
         reason: Cow<'static, [u8]>,
         readiness: &mut Readiness,
     ) -> Result<()> {
-        let _guard = self.try_lock_prv(LocKind::Close {
-            app,
-            err,
-            reason: reason.clone(),
-        })?;
+        let std::task::Poll::Ready(_guard) = self
+            .try_lock_prv(LocKind::Close {
+                app,
+                err,
+                reason: reason.clone(),
+            })
+            .would_block()?
+        else {
+            return Ok(());
+        };
 
         // safety: state is protected by previous level locker.
         let conn = unsafe { self.wrapped.get().as_mut().unwrap() };
@@ -260,7 +266,9 @@ impl QuicConn {
     ) -> Result<()> {
         let kind = LocKind::StreamClose { id: stream_id, err };
 
-        let _guard = self.try_lock_prv(kind)?;
+        let std::task::Poll::Ready(_guard) = self.try_lock_prv(kind).would_block()? else {
+            return Ok(());
+        };
 
         let r = self.stream_shutdown_prv(
             // safety: state is protected by previous level locker.
@@ -280,15 +288,36 @@ impl QuicConn {
         stream_id: u64,
         err: u64,
     ) -> Result<()> {
-        if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, err) {
-            if err != quiche::Error::Done {
-                return Err(err.into());
+        if is_bidi(stream_id) {
+            if !conn.stream_finished(stream_id) {
+                if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, err) {
+                    if err != quiche::Error::Done {
+                        return Err(err.into());
+                    }
+                }
             }
-        }
 
-        if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Write, err) {
-            if err != quiche::Error::Done {
-                return Err(err.into());
+            // shutdown send.
+            if let Err(err) = conn.stream_send(stream_id, b"", true) {
+                if err != quiche::Error::Done {
+                    return Err(err.into());
+                }
+            }
+        } else {
+            if is_local(stream_id, conn.is_server()) {
+                if let Err(err) = conn.stream_send(stream_id, b"", true) {
+                    if err != quiche::Error::Done {
+                        return Err(err.into());
+                    }
+                }
+            } else {
+                if !conn.stream_finished(stream_id) {
+                    if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, err) {
+                        if err != quiche::Error::Done {
+                            return Err(err.into());
+                        }
+                    }
+                }
             }
         }
 
@@ -476,19 +505,17 @@ impl QuicConn {
                     }
                 }
                 LocKind::StreamRecv(stream_id) => {
-                    if conn.stream_readable(stream_id) {
-                        readiness.insert(
-                            Event {
-                                kind: EventKind::StreamRecv,
-                                is_server: conn.is_server(),
+                    readiness.insert(
+                        Event {
+                            kind: EventKind::StreamRecv,
+                            is_server: conn.is_server(),
 
-                                is_error: false,
-                                token: self.token,
-                                stream_id,
-                            },
-                            None,
-                        );
-                    }
+                            is_error: false,
+                            token: self.token,
+                            stream_id,
+                        },
+                        None,
+                    );
                 }
                 LocKind::StreamClose { id, err } => {
                     if let Err(err) = self.stream_shutdown_prv(conn, id, err) {
@@ -592,6 +619,17 @@ impl QuicConn {
         while let Some(stream_id) = conn.stream_readable_next() {
             if !is_local(stream_id, conn.is_server()) {
                 self.handle_accept(conn, stream_id, readiness);
+            } else {
+                readiness.insert(
+                    Event {
+                        kind: EventKind::StreamRecv,
+                        is_server: conn.is_server(),
+                        is_error: false,
+                        token: self.token,
+                        stream_id,
+                    },
+                    None,
+                );
             }
         }
     }

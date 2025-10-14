@@ -66,7 +66,7 @@ pub struct Readiness {
 impl Readiness {
     /// Insert a new readiness event with optional delay times.
     pub fn insert(&mut self, event: Event, delay_to: Option<Instant>) {
-        log::trace!("readiness, event={:?}, delay={:?}", event, delay_to);
+        log::trace!("insert readiness, event={:?}, delay={:?}", event, delay_to);
         if let Some(delay_to) = delay_to {
             self.events.remove(&event);
             self.delayed.push(event, Reverse(delay_to));

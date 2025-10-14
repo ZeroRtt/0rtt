@@ -19,20 +19,22 @@ boring = { version = "^4.17" }
 rand = { version = "0.9.2", optional = true }
 fixedbuf = { version = "0.1.0" , path="../fixedbuf" }
 mio = {version = "1.0.4", features=["os-poll","net"], optional = true }
-crossbeam-utils = "0.8.21"
+crossbeam-utils = { version="0.8.21", optional=true }
+futures-io = { version="0.3.31", optional=true }
 
 [dev-dependencies]
 divan = "0.1.21"
 rand = "0.9.2"
 pretty_env_logger = "0.5.0"
 test-fuzz = "7.2.4"
+tokio = { version="1.47.1", features=["rt","macros", "rt-multi-thread"] }
 
 [features]
 default = ["client","server","mio","futures"]
 client = ["rand"]
 server = ["rand"]
-mio = ["dep:mio"]
-futures = ["mio"]
+mio = ["dep:mio","crossbeam-utils"]
+futures = ["mio","futures-io"]
 
 [[bench]]
 name = "group"

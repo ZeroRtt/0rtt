@@ -131,6 +131,12 @@ impl Group {
         Ok(conn)
     }
 
+    /// Returns number of connections in the group.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.state.lock().conns.len()
+    }
+
     fn unlock(&self, ctx: LockContext) {
         let mut state = self.state.lock();
 
@@ -365,6 +371,18 @@ impl Group {
                 return Ok((recv_size, fin));
             }
             Err(quiche::Error::Done) => {
+                if conn.stream_finished(stream_id) {
+                    log::trace!(
+                        "stream recv, scid={:?}, stream_id={}, len={}, fin={}",
+                        conn.source_id(),
+                        stream_id,
+                        0,
+                        true
+                    );
+
+                    return Ok((0, true));
+                }
+
                 log::trace!(
                     "stream recv, scid={:?}, stream_id={}, Done",
                     conn.source_id(),

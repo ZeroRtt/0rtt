@@ -150,12 +150,12 @@ pub struct Acceptor {
     /// configuration for quiche `Connection`.
     config: quiche::Config,
     /// Algorithem for address validation.
-    address_validator: Box<dyn AddressValidator>,
+    address_validator: Box<dyn AddressValidator + Send>,
 }
 
 impl Acceptor {
     /// Create a new acceptor with custom `quiche::Config` and `AddressValidator`
-    pub fn new<A: AddressValidator + 'static>(
+    pub fn new<A: AddressValidator + Send + 'static>(
         config: quiche::Config,
         address_validator: A,
     ) -> Self {

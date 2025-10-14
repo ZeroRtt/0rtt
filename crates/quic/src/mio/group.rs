@@ -20,6 +20,7 @@ use crate::{
     },
     poll::{
         Event, EventKind, StreamKind, Token,
+        client::ClientGroup,
         server::{Acceptor, ServerGroup},
         utils::min_of_some,
     },
@@ -85,24 +86,35 @@ impl Group {
         })
     }
 
+    /// Returns local bound addresses.
+    pub fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
+        self.laddrs.keys()
+    }
+
+    /// Returns number of connections in the group.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.group.len()
+    }
+
     /// Wrap and register a new `quiche::Connection`.
     #[inline]
     pub fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
-        let token = self.group.register(wrapped)?;
+        let token = self.group.register(wrapped);
 
         self.waker.wake()?;
 
-        Ok(token)
+        Ok(token?)
     }
 
     /// Unwrap a bound `quiche::Connection`
     #[inline]
     pub fn deregister(&self, token: Token) -> Result<quiche::Connection> {
-        let conn = self.group.deregister(token)?;
+        let conn = self.group.deregister(token);
 
         self.waker.wake()?;
 
-        Ok(conn)
+        Ok(conn?)
     }
 
     /// Close one wrapped `quiche::Connection`
@@ -114,30 +126,30 @@ impl Group {
         err: u64,
         reason: Cow<'static, [u8]>,
     ) -> Result<()> {
-        self.group.close(token, app, err, reason)?;
+        let r = self.group.close(token, app, err, reason);
 
         self.waker.wake()?;
 
-        Ok(())
+        Ok(r?)
     }
 
     /// Open a new outbound stream.
     pub fn stream_open(&self, token: Token, kind: StreamKind) -> Result<u64> {
-        let stream_id = self.group.stream_open(token, kind)?;
+        let stream_id = self.group.stream_open(token, kind);
 
         self.waker.wake()?;
 
-        Ok(stream_id)
+        Ok(stream_id?)
     }
 
     /// Shutdown a stream.
     #[inline]
     pub fn stream_shutdown(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
-        self.group.stream_shutdown(token, stream_id, err)?;
+        let r = self.group.stream_shutdown(token, stream_id, err);
 
         self.waker.wake()?;
 
-        Ok(())
+        Ok(r?)
     }
 
     /// Writes data to a stream.
@@ -149,11 +161,11 @@ impl Group {
         buf: &[u8],
         fin: bool,
     ) -> Result<usize> {
-        let send_size = self.group.stream_send(token, stream_id, buf, fin)?;
+        let send_size = self.group.stream_send(token, stream_id, buf, fin);
 
         self.waker.wake()?;
 
-        Ok(send_size)
+        Ok(send_size?)
     }
 
     /// Reads contiguous data from a stream into the provided slice.
@@ -164,11 +176,11 @@ impl Group {
         stream_id: u64,
         buf: &mut [u8],
     ) -> Result<(usize, bool)> {
-        let r = self.group.stream_recv(token, stream_id, buf)?;
+        let r = self.group.stream_recv(token, stream_id, buf);
 
         self.waker.wake()?;
 
-        Ok(r)
+        Ok(r?)
     }
 
     /// Waits for readiness events.
@@ -217,6 +229,8 @@ impl Group {
         };
 
         let mut events = Events::with_capacity(1024);
+
+        log::trace!("mio poll: timeout({:?})", timeout);
 
         poll_state
             .poll
@@ -333,6 +347,7 @@ impl Group {
                             }
                         }
                         Err(crate::poll::Error::Busy) | Err(crate::poll::Error::Retry) => {
+                            log::trace!("park.....");
                             parker.park();
                             // try agian.
                             continue;
@@ -361,12 +376,15 @@ impl Group {
                         Ok(_) => {}
                         // Current connection is busy.
                         Err(crate::poll::Error::Busy) | Err(crate::poll::Error::Retry) => {
+                            log::trace!("park.....client....");
                             parker.park();
                             // try agian.
                             continue;
                         }
                         Err(_) => {}
                     }
+
+                    break;
                 }
             }
         }
@@ -379,6 +397,26 @@ impl Group {
         _ = socket.flush().would_block()?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "client")]
+impl ClientGroup for Group {
+    #[inline]
+    fn connect(
+        &self,
+        server_name: Option<&str>,
+        local: SocketAddr,
+        peer: SocketAddr,
+        config: &mut quiche::Config,
+    ) -> crate::poll::Result<Token> {
+        assert!(self.laddrs.contains_key(&local), "invalid local address.");
+
+        let token = self.group.connect(server_name, local, peer, config);
+
+        _ = self.waker.wake();
+
+        Ok(token?)
     }
 }
 
