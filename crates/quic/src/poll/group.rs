@@ -296,7 +296,7 @@ impl Group {
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
         conn.borrow_mut()
-            .stream_shutdown(stream_id, err, state.readiness.borrow_mut().deref_mut())
+            .stream_close(stream_id, err, state.readiness.borrow_mut().deref_mut())
     }
 
     /// Writes data to a stream.

@@ -258,7 +258,7 @@ impl QuicConn {
     }
 
     /// Shutdown specific stream's read/write.
-    pub fn stream_shutdown(
+    pub fn stream_close(
         &mut self,
         stream_id: u64,
         err: u64,
@@ -270,7 +270,7 @@ impl QuicConn {
             return Ok(());
         };
 
-        let r = self.stream_shutdown_prv(
+        let r = self.stream_close_prv(
             // safety: state is protected by previous level locker.
             unsafe { self.wrapped.get().as_mut().unwrap() },
             stream_id,
@@ -282,7 +282,7 @@ impl QuicConn {
         r
     }
 
-    fn stream_shutdown_prv(
+    fn stream_close_prv(
         &mut self,
         conn: &mut quiche::Connection,
         stream_id: u64,
@@ -518,7 +518,7 @@ impl QuicConn {
                     );
                 }
                 LocKind::StreamClose { id, err } => {
-                    if let Err(err) = self.stream_shutdown_prv(conn, id, err) {
+                    if let Err(err) = self.stream_close_prv(conn, id, err) {
                         log::error!(
                             "shutdown, scid={:?}, stream_id={}, err={}",
                             conn.source_id(),

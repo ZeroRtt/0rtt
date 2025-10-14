@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use futures_util::{AsyncReadExt, AsyncWriteExt};
 use quiche::Config;
 use zrquic::{
     futures::{QuicConn, QuicListener},
@@ -186,5 +187,48 @@ async fn stream_uni() {
         let len = stream.send(msg.as_bytes(), true).await.unwrap();
 
         log::trace!("send({}): {}", i, len);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn stream_io() {
+    // _ = pretty_env_logger::try_init_timed();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
+
+    let client_conn = QuicConn::connect(
+        None,
+        "127.0.0.1:0".parse().unwrap(),
+        remote_addr,
+        &mut mock_config(false),
+    )
+    .await
+    .unwrap();
+
+    let server_conn = server.accept().await.unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            let mut stream = server_conn.accept().await.unwrap();
+
+            let mut buf = vec![0; 100];
+
+            let read_size = stream.read(&mut buf).await.unwrap();
+            stream.send(&buf[..read_size], true).await.unwrap();
+        }
+    });
+
+    for i in 0..100 {
+        let mut stream = client_conn.open(StreamKind::Bidi).await.unwrap();
+
+        let msg = format!("Send {}", i);
+
+        stream.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut buf = vec![0; 100];
+
+        let read_size = stream.read(&mut buf).await.unwrap();
+        log::trace!("recv({}): {}", i, read_size);
+        assert_eq!(&buf[..read_size], msg.as_bytes());
     }
 }

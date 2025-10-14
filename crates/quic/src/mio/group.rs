@@ -144,7 +144,7 @@ impl Group {
 
     /// Shutdown a stream.
     #[inline]
-    pub fn stream_shutdown(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
+    pub fn stream_close(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
         let r = self.group.stream_shutdown(token, stream_id, err);
 
         self.waker.wake()?;
