@@ -289,6 +289,7 @@ impl QuicConn {
         err: u64,
     ) -> Result<()> {
         if is_bidi(stream_id) {
+            // stop receive.
             if !conn.stream_finished(stream_id) {
                 if let Err(err) = conn.stream_shutdown(stream_id, Shutdown::Read, err) {
                     if err != quiche::Error::Done {
