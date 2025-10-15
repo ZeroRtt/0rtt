@@ -23,6 +23,6 @@ pretty_env_logger = { version = "0.5.0", optional = true }
 
 [features]
 default = ["o3", "agent", "cli"]
-o3 = ["tokio/net","tokio/io-util","rand"]
-agent = ["tokio/net","tokio/io-util","rand"]
+o3 = ["tokio/rt","tokio/net","tokio/io-util","rand"]
+agent = ["tokio/rt","tokio/net","tokio/io-util","rand"]
 cli = ["clap", "pretty_env_logger", "color-print"]
