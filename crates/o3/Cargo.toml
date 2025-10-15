@@ -1,0 +1,28 @@
+[package]
+description = "A `quic/http3` reverse proxy based on `zrquic`"
+documentation = "https://docs.rs/o3"
+edition = "2024"
+license = "MIT"
+name = "o3"
+repository = "https://github.com/ZeroRtt/ZeroRtt/crates/o3"
+version = "0.1.15"
+
+[dependencies]
+thiserror = { version = "^2.0" }
+log = { version = "^0.4" }
+zrquic = { version = "^0.1", path = "../quic" }
+color-print = { version = "0.3.7", optional = true }
+tokio = { version = "1.47.1", optional = true }
+parking_lot = "0.12.4"
+rand = { version = "0.9.2", optional = true }
+
+
+# for cli programs.
+clap = { version = "=4.5.41", features = ["derive"], optional = true }
+pretty_env_logger = { version = "0.5.0", optional = true }
+
+[features]
+default = ["o3", "agent", "cli"]
+o3 = ["tokio/net","tokio/io-util","rand"]
+agent = ["tokio/net","tokio/io-util","rand"]
+cli = ["clap", "pretty_env_logger", "color-print"]

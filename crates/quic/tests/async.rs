@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use futures_util::{AsyncReadExt, AsyncWriteExt};
 use quiche::Config;
+
 use zrquic::{
     futures::{QuicConn, QuicListener},
     poll::{
@@ -134,7 +134,7 @@ async fn stream_bidi() {
     });
 
     for i in 0..100 {
-        let stream = client_conn.open(StreamKind::Bidi).await.unwrap();
+        let stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -180,7 +180,7 @@ async fn stream_uni() {
     });
 
     for i in 0..100 {
-        let stream = client_conn.open(StreamKind::Uni).await.unwrap();
+        let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -190,10 +190,10 @@ async fn stream_uni() {
     }
 }
 
-#[cfg(not(target_os="windows"))]
+#[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn stream_io() {
-    _ = pretty_env_logger::try_init_timed();
+    // _ = pretty_env_logger::try_init_timed();
     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
     let remote_addr = server.local_addrs().copied().next().unwrap();
 
@@ -210,6 +210,11 @@ async fn stream_io() {
 
     tokio::spawn(async move {
         loop {
+            #[cfg(not(feature = "tokio"))]
+            use futures_util::AsyncReadExt;
+            #[cfg(feature = "tokio")]
+            use tokio::io::AsyncReadExt;
+
             let mut stream = server_conn.accept().await.unwrap();
 
             let mut buf = vec![0; 100];
@@ -220,7 +225,11 @@ async fn stream_io() {
     });
 
     for i in 0..100 {
-        let mut stream = client_conn.open(StreamKind::Bidi).await.unwrap();
+        #[cfg(not(feature = "tokio"))]
+        use futures_util::{AsyncReadExt, AsyncWriteExt};
+        #[cfg(feature = "tokio")]
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -263,7 +272,7 @@ async fn multi_conn() {
         .await
         .unwrap();
 
-        let stream = client_conn.open(StreamKind::Uni).await.unwrap();
+        let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
 
         let msg = format!("Send {}", i);
 

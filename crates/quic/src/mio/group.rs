@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    io::Result,
+    io::{Error, Result},
     net::{SocketAddr, ToSocketAddrs},
     task::Poll,
     time::{Duration, Instant},
@@ -134,12 +134,28 @@ impl Group {
     }
 
     /// Open a new outbound stream.
-    pub fn stream_open(&self, token: Token, kind: StreamKind) -> Result<u64> {
-        let stream_id = self.group.stream_open(token, kind);
+    pub fn stream_open(
+        &self,
+        token: Token,
+        kind: StreamKind,
+        max_streams_as_error: bool,
+    ) -> Result<u64> {
+        match self.group.stream_open(token, kind) {
+            Err(crate::poll::Error::Retry) => {
+                self.waker.wake()?;
 
-        self.waker.wake()?;
+                if max_streams_as_error {
+                    return Err(Error::other("MAX_STREMAS"));
+                }
 
-        Ok(stream_id?)
+                return Err(crate::poll::Error::Retry.into());
+            }
+            r => {
+                self.waker.wake()?;
+
+                Ok(r?)
+            }
+        }
     }
 
     /// Shutdown a stream.

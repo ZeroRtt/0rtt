@@ -22,20 +22,23 @@ mio = {version = "1.0.4", features=["os-poll","net"], optional = true }
 crossbeam-utils = { version="0.8.21", optional=true }
 futures-io = { version="0.3.31", optional=true }
 futures-util = { version="0.3.31", optional=true }
+tokio = { version="1.47.1", optional=true }
+
 [dev-dependencies]
 divan = "0.1.21"
 rand = "0.9.2"
 pretty_env_logger = "0.5.0"
 test-fuzz = "7.2.4"
-tokio = { version="1.47.1", features=["rt","macros", "rt-multi-thread"] }
+tokio = { version="1.47.1", features=["rt","macros", "rt-multi-thread","io-util"] }
 futures-util = { version="0.3.31", features=["io"] }
 
 [features]
-default = ["client","server","mio","futures"]
+default = ["client","server","mio","futures","tokio"]
 client = ["rand"]
 server = ["rand"]
 mio = ["dep:mio","crossbeam-utils"]
 futures = ["mio","futures-io","futures-util"]
+tokio = ["dep:tokio"]
 
 [[bench]]
 name = "group"
