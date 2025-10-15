@@ -232,3 +232,42 @@ async fn stream_io() {
         assert_eq!(&buf[..read_size], msg.as_bytes());
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn multi_conn() {
+    // _ = pretty_env_logger::try_init_timed();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            let server_conn = server.accept().await.unwrap();
+
+            let stream = server_conn.accept().await.unwrap();
+
+            let mut buf = vec![0; 100];
+
+            let (_, fin) = stream.recv(&mut buf).await.unwrap();
+            assert_eq!(fin, true);
+        }
+    });
+
+    for i in 0..100 {
+        let client_conn = QuicConn::connect(
+            None,
+            "127.0.0.1:0".parse().unwrap(),
+            remote_addr,
+            &mut mock_config(false),
+        )
+        .await
+        .unwrap();
+
+        let stream = client_conn.open(StreamKind::Uni).await.unwrap();
+
+        let msg = format!("Send {}", i);
+
+        let len = stream.send(msg.as_bytes(), true).await.unwrap();
+
+        log::trace!("send({}): {}", i, len);
+    }
+}
