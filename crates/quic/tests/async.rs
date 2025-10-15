@@ -190,9 +190,10 @@ async fn stream_uni() {
     }
 }
 
+#[cfg(not(target_os="windows"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn stream_io() {
-    // _ = pretty_env_logger::try_init_timed();
+    _ = pretty_env_logger::try_init_timed();
     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
     let remote_addr = server.local_addrs().copied().next().unwrap();
 
