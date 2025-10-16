@@ -2,11 +2,13 @@ use std::task::Poll;
 
 use futures::FutureExt;
 use futures_test::task::noop_context;
-use metricrs::counter;
+use metricrs::instrument;
 
 #[test]
-fn derive_counter() {
-    #[counter("test.mock_send")]
+fn instrument() {
+    _ = pretty_env_logger::try_init();
+
+    #[instrument(counter, "test.mock_send")]
     fn mock_send() -> usize {
         1
     }
@@ -16,7 +18,7 @@ fn derive_counter() {
     struct Mock;
 
     impl Mock {
-        #[counter("test.mock.async_send", class = "Mock")]
+        #[instrument(timer, "test.mock.async_send")]
         async fn send(&mut self) -> usize {
             1
         }

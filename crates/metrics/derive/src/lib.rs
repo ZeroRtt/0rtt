@@ -2,9 +2,10 @@ use std::fmt::Display;
 
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{Ident, ItemFn, LitStr, Token, parse::Parse, parse_macro_input};
+use syn::{Error, Ident, ItemFn, LitStr, Token, parse::Parse, parse_macro_input};
 
 struct InstrumentArgs {
+    pub ident: Ident,
     pub name: LitStr,
     pub labels: Vec<(Ident, LitStr)>,
 }
@@ -21,7 +22,21 @@ impl Display for InstrumentArgs {
 
 impl Parse for InstrumentArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let name = input.parse()?;
+        let ident = input.parse().map_err(|err| {
+            Error::new(
+                err.span(),
+                "expect instrument `Type` argument: counter, timer, ..",
+            )
+        })?;
+
+        let _: Token![,] = input
+            .parse()
+            .map_err(|err| Error::new(err.span(), "expect instrument `Name` argument"))?;
+
+        let name = input
+            .parse()
+            .map_err(|err| Error::new(err.span(), "expect instrument `Name` argument"))?;
+
         let mut tags = vec![];
 
         while let Some(_) = Option::<Token![,]>::parse(input)? {
@@ -31,14 +46,22 @@ impl Parse for InstrumentArgs {
             tags.push((tag_name, value));
         }
 
-        Ok(Self { name, labels: tags })
+        Ok(Self {
+            ident,
+            name,
+            labels: tags,
+        })
     }
 }
 
-/// Register `counter` measuring instrument for this function.
+/// Register measuring instrument for this function.
 #[proc_macro_attribute]
-pub fn counter(attrs: TokenStream, item: TokenStream) -> TokenStream {
-    let InstrumentArgs { name, labels } = parse_macro_input!(attrs as InstrumentArgs);
+pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let InstrumentArgs {
+        ident,
+        name,
+        labels,
+    } = parse_macro_input!(attrs as InstrumentArgs);
 
     let labels = labels
         .into_iter()
@@ -65,15 +88,43 @@ pub fn counter(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote!(#block)
     };
 
-    quote! {
-        #(#attrs)*
-        #vis #sig {
-            let r = #block;
+    if ident == "counter" {
+        quote! {
+            #(#attrs)*
+            #vis #sig {
+                let r = #block;
 
-            let labels = vec![#(#labels),*];
-            metricrs::global::get_global_registry().counter(#name, &labels).increment(1);
-            r
+                static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
+
+                metricrs::global::get_global_registry().counter(#name, LABELS).increment(1);
+
+                r
+            }
         }
+        .into()
+    } else if ident == "timer" {
+        quote! {
+            #(#attrs)*
+            #vis #sig {
+
+                let now = std::time::Instant::now();
+
+                let r = #block;
+
+                static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
+
+                metricrs::global::get_global_registry().histogam(#name, LABELS).record(now.elapsed().as_secs_f64());
+
+                r
+            }
+        }
+        .into()
+    } else {
+        Error::new(
+            ident.span(),
+            "invalid instrument type, expect: counter, timer, ..",
+        )
+        .into_compile_error()
+        .into()
     }
-    .into()
 }

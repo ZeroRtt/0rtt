@@ -11,14 +11,32 @@ struct NoopRegistry;
 #[allow(unused)]
 impl Registry for NoopRegistry {
     fn counter(&self, key: &str, tags: &[(&str, &str)]) -> crate::Counter {
+        #[cfg(feature = "log")]
+        log::trace!(
+            "register/get instrument=counter, key={}, tags={:?}",
+            key,
+            tags
+        );
         crate::Counter::Noop
     }
 
     fn gauge(&self, key: &str, tags: &[(&str, &str)]) -> crate::Gauge {
+        #[cfg(feature = "log")]
+        log::trace!(
+            "register/get instrument=gauge, key={}, tags={:?}",
+            key,
+            tags
+        );
         crate::Gauge::Noop
     }
 
     fn histogam(&self, key: &str, tags: &[(&str, &str)]) -> crate::Histogram {
+        #[cfg(feature = "log")]
+        log::trace!(
+            "register/get instrument=histogam, key={}, tags={:?}",
+            key,
+            tags
+        );
         crate::Histogram::Noop
     }
 }

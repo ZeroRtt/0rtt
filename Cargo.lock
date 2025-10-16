@@ -827,9 +827,12 @@ dependencies = [
 name = "metricrs"
 version = "0.1.0"
 dependencies = [
+ "divan",
  "futures",
  "futures-test",
+ "log",
  "metricrs-derive",
+ "pretty_env_logger",
 ]
 
 [[package]]
