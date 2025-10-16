@@ -1,9 +1,9 @@
 [package]
 description = "A lightweight metrics facade for `Rust`."
-documentation = "https://docs.rs/metrics-rs"
+documentation = "https://docs.rs/metricrs"
 edition = "2024"
 license = "MIT"
-name = "metrics-rs"
+name = "metricrs"
 repository = "https://github.com/ZeroRtt/ZeroRtt/crates/metrics"
 version = "0.1.0"
 
