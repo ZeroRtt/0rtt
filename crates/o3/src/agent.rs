@@ -36,7 +36,18 @@ impl Agent {
         config: quiche::Config,
     ) -> Result<Self> {
         let group = Group::bind((Ipv6Addr::UNSPECIFIED, 0), None)?;
+
         let local_addr = group.local_addrs().copied().next().unwrap();
+
+        let background = group.clone();
+
+        std::thread::spawn(|| {
+            if let Err(err) = background.run() {
+                log::error!("quic background worker is stopped, {}", err);
+            } else {
+                log::warn!("quic background worker is stopped");
+            }
+        });
 
         Ok(Self {
             listener: TcpListener::bind(local).await?,
