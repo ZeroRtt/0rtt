@@ -1,0 +1,11 @@
+[package]
+description = "A lightweight metrics facade for `Rust`."
+documentation = "https://docs.rs/metrics-rs"
+edition = "2024"
+license = "MIT"
+name = "metrics-rs"
+repository = "https://github.com/ZeroRtt/ZeroRtt/crates/metrics"
+version = "0.1.0"
+
+
+[dependencies]
