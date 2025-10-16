@@ -54,7 +54,7 @@ impl Parse for InstrumentArgs {
     }
 }
 
-/// Register measuring instrument for this function.
+/// Create measuring instruments for methods via attribute
 #[proc_macro_attribute]
 pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
     let InstrumentArgs {
@@ -92,6 +92,7 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #(#attrs)*
             #vis #sig {
+
                 static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
 
                 if let Some(registry) = metricrs::global::get_global_registry() {
@@ -108,6 +109,7 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #(#attrs)*
             #vis #sig {
+
                 static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
 
                 if let Some(registry) = metricrs::global::get_global_registry() {

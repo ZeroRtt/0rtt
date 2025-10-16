@@ -1,31 +1,19 @@
-/// Measuring instrument **should** implement this trait.
-pub trait Instrument {
-    /// Creates a no-op `instrument` which does nothing.
-    fn noop() -> Self;
-}
-
-/// Raw counter instrument.
-pub trait RawCounter: Send + Sync {
+/// Registry implemenation should implement this trait for `instrument counter`.
+pub trait InstrumentCounter: Send + Sync {
     /// Increment counter with `step`.
     fn increment(&self, step: u64);
     /// Update counter to `value`.
     fn absolute(&self, value: u64);
 }
 
-/// measuring instrument `counter`.
+/// `Counter` measuring instrument.
 pub enum Counter {
     Noop,
-    Record(Box<dyn RawCounter>),
-}
-
-impl Instrument for Counter {
-    fn noop() -> Self {
-        Self::Noop
-    }
+    Record(Box<dyn InstrumentCounter>),
 }
 
 impl Counter {
-    /// See [`increment`](RawCounter::increment)
+    /// See [`increment`](InstrumentCounter::increment)
     #[inline]
     pub fn increment(&self, step: u64) {
         match self {
@@ -34,7 +22,7 @@ impl Counter {
         }
     }
 
-    /// See [`absolute`](RawCounter::absolute)
+    /// See [`absolute`](InstrumentCounter::absolute)
     #[inline]
     pub fn absolute(&self, value: u64) {
         match self {
@@ -44,8 +32,8 @@ impl Counter {
     }
 }
 
-/// Raw `gauge` instrument.
-pub trait RawGauge: Send + Sync {
+/// Registry implemenation should implement this trait for `instrument gauge`.
+pub trait InstrumentGauge: Send + Sync {
     /// Increments the gauge.
     fn increment(&self, value: f64);
 
@@ -56,16 +44,10 @@ pub trait RawGauge: Send + Sync {
     fn set(&self, value: f64);
 }
 
-/// measuring instrument `gauge`.
+/// `Gauge` measuring instrument.
 pub enum Gauge {
     Noop,
-    Record(Box<dyn RawGauge>),
-}
-
-impl Instrument for Gauge {
-    fn noop() -> Self {
-        Self::Noop
-    }
+    Record(Box<dyn InstrumentGauge>),
 }
 
 impl Gauge {
@@ -97,22 +79,16 @@ impl Gauge {
     }
 }
 
-/// Raw `histogram` instrument.
-pub trait RawHistogram: Send + Sync {
+/// Registry implemenation should implement this trait for `instrument histogam`.
+pub trait InstrumentHistogram: Send + Sync {
     /// Records a value into the histogram.
     fn record(&self, value: f64);
 }
 
-/// measuring instrument `histogam`.
+/// `Histogam` measuring instrument.
 pub enum Histogram {
     Noop,
-    Record(Box<dyn RawHistogram>),
-}
-
-impl Instrument for Histogram {
-    fn noop() -> Self {
-        Self::Noop
-    }
+    Record(Box<dyn InstrumentHistogram>),
 }
 
 impl Histogram {
@@ -126,7 +102,7 @@ impl Histogram {
     }
 }
 
-/// Registry for measuring instruments.
+/// Registry of measuring instruments must implement this trait.
 pub trait Registry: Send + Sync {
     /// Register/Get measuring instrument `counter`.
     #[must_use = "This will cause unnecessary performance loss."]
