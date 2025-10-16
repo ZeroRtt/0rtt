@@ -92,13 +92,15 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #(#attrs)*
             #vis #sig {
-                let r = #block;
-
                 static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
 
-                metricrs::global::get_global_registry().counter(#name, LABELS).increment(1);
-
-                r
+                if let Some(registry) = metricrs::global::get_global_registry() {
+                    let r = #block;
+                    registry.counter(#name, LABELS).increment(1);
+                    r
+                } else {
+                    #block
+                }
             }
         }
         .into()
@@ -106,16 +108,16 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #(#attrs)*
             #vis #sig {
-
-                let now = std::time::Instant::now();
-
-                let r = #block;
-
                 static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
 
-                metricrs::global::get_global_registry().histogam(#name, LABELS).record(now.elapsed().as_secs_f64());
-
-                r
+                if let Some(registry) = metricrs::global::get_global_registry() {
+                    let now = std::time::Instant::now();
+                    let r = #block;
+                    registry.histogam(#name, LABELS).record(now.elapsed().as_secs_f64());
+                    r
+                } else {
+                    #block
+                }
             }
         }
         .into()

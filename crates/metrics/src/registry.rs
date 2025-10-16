@@ -129,11 +129,14 @@ impl Histogram {
 /// Registry for measuring instruments.
 pub trait Registry: Send + Sync {
     /// Register/Get measuring instrument `counter`.
+    #[must_use = "This will cause unnecessary performance loss."]
     fn counter(&self, key: &str, tags: &[(&str, &str)]) -> Counter;
 
     /// Register/Get measuring instrument `gauge`.
+    #[must_use = "This will cause unnecessary performance loss."]
     fn gauge(&self, key: &str, tags: &[(&str, &str)]) -> Gauge;
 
     /// Register/Get measuring instrument `histogam`.
+    #[must_use = "This will cause unnecessary performance loss."]
     fn histogam(&self, key: &str, tags: &[(&str, &str)]) -> Histogram;
 }
