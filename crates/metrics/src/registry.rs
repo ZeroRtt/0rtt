@@ -1,5 +1,35 @@
+use std::hash::{DefaultHasher, Hasher};
+
+/// `key` id to reference a Measuring instrument
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+pub struct Token<'a> {
+    pub hash: u64,
+    pub name: &'a str,
+    pub labels: &'a [(&'a str, &'a str)],
+}
+
+impl<'a> Token<'a> {
+    /// Create a key from instrument `Name` and `Labels`.
+    pub fn new(name: &'a str, labels: &'a [(&'a str, &'a str)]) -> Self {
+        let mut hasher = DefaultHasher::new();
+
+        hasher.write(name.as_bytes());
+
+        for (key, value) in labels {
+            hasher.write(key.as_bytes());
+            hasher.write(value.as_bytes());
+        }
+
+        Self {
+            hash: hasher.finish(),
+            name,
+            labels,
+        }
+    }
+}
+
 /// Registry implemenation should implement this trait for `instrument counter`.
-pub trait InstrumentCounter: Send + Sync {
+pub trait CounterWrite: Send + Sync {
     /// Increment counter with `step`.
     fn increment(&self, step: u64);
     /// Update counter to `value`.
@@ -9,7 +39,7 @@ pub trait InstrumentCounter: Send + Sync {
 /// `Counter` measuring instrument.
 pub enum Counter {
     Noop,
-    Record(Box<dyn InstrumentCounter>),
+    Record(Box<dyn CounterWrite>),
 }
 
 impl Counter {
@@ -33,7 +63,7 @@ impl Counter {
 }
 
 /// Registry implemenation should implement this trait for `instrument gauge`.
-pub trait InstrumentGauge: Send + Sync {
+pub trait GaugeWrite: Send + Sync {
     /// Increments the gauge.
     fn increment(&self, value: f64);
 
@@ -47,7 +77,7 @@ pub trait InstrumentGauge: Send + Sync {
 /// `Gauge` measuring instrument.
 pub enum Gauge {
     Noop,
-    Record(Box<dyn InstrumentGauge>),
+    Record(Box<dyn GaugeWrite>),
 }
 
 impl Gauge {
@@ -80,7 +110,7 @@ impl Gauge {
 }
 
 /// Registry implemenation should implement this trait for `instrument histogam`.
-pub trait InstrumentHistogram: Send + Sync {
+pub trait HistogramWrite: Send + Sync {
     /// Records a value into the histogram.
     fn record(&self, value: f64);
 }
@@ -88,7 +118,7 @@ pub trait InstrumentHistogram: Send + Sync {
 /// `Histogam` measuring instrument.
 pub enum Histogram {
     Noop,
-    Record(Box<dyn InstrumentHistogram>),
+    Record(Box<dyn HistogramWrite>),
 }
 
 impl Histogram {
@@ -106,13 +136,13 @@ impl Histogram {
 pub trait Registry: Send + Sync {
     /// Register/Get measuring instrument `counter`.
     #[must_use = "This will cause unnecessary performance loss."]
-    fn counter(&self, key: &str, tags: &[(&str, &str)]) -> Counter;
+    fn counter(&self, token: Token<'_>) -> Counter;
 
     /// Register/Get measuring instrument `gauge`.
     #[must_use = "This will cause unnecessary performance loss."]
-    fn gauge(&self, key: &str, tags: &[(&str, &str)]) -> Gauge;
+    fn gauge(&self, token: Token<'_>) -> Gauge;
 
     /// Register/Get measuring instrument `histogam`.
     #[must_use = "This will cause unnecessary performance loss."]
-    fn histogam(&self, key: &str, tags: &[(&str, &str)]) -> Histogram;
+    fn histogam(&self, token: Token<'_>) -> Histogram;
 }

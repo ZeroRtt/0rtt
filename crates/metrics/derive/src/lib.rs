@@ -93,11 +93,13 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
             #(#attrs)*
             #vis #sig {
 
-                static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
+                static TOKEN: std::sync::LazyLock<metricrs::Token<'static>> = std::sync::LazyLock::new(|| {
+                    metricrs::Token::new(#name, &[("rust_module_path",module_path!()),#(#labels),*])
+                });
 
                 if let Some(registry) = metricrs::global::get_global_registry() {
                     let r = #block;
-                    registry.counter(#name, LABELS).increment(1);
+                    registry.counter(*TOKEN).increment(1);
                     r
                 } else {
                     #block
@@ -110,12 +112,14 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
             #(#attrs)*
             #vis #sig {
 
-                static LABELS: &[(&str,&str)] = &[("rust_module_path",module_path!()),#(#labels),*];
+                static TOKEN: std::sync::LazyLock<metricrs::Token<'static>> = std::sync::LazyLock::new(|| {
+                    metricrs::Token::new(#name, &[("rust_module_path",module_path!()),#(#labels),*])
+                });
 
                 if let Some(registry) = metricrs::global::get_global_registry() {
                     let now = std::time::Instant::now();
                     let r = #block;
-                    registry.histogam(#name, LABELS).record(now.elapsed().as_secs_f64());
+                    registry.histogam(*TOKEN).record(now.elapsed().as_secs_f64());
                     r
                 } else {
                     #block

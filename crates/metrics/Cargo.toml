@@ -11,6 +11,7 @@ version = "0.1.0"
 [dependencies]
 metricrs-derive = { version = "^0.1", path = "./derive" , optional = true }
 log = { version = "^0.4", optional = true }
+parking_lot = { version = "0.12.4", optional = true }
 
 [dev-dependencies]
 futures = { version="0.3.31" }
@@ -19,10 +20,11 @@ pretty_env_logger = "0.5.0"
 divan = "0.1.21"
 
 [features]
-default = ["derive","log"]
+default = ["derive","log","memory"]
 log = ["dep:log"]
 global = []
 derive = ["metricrs-derive","global"]
+memory = ["parking_lot"]
 
 
 [[bench]]

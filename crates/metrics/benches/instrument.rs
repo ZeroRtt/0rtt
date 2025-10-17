@@ -1,7 +1,11 @@
+use std::time::Instant;
+
 use divan::bench;
-use metricrs::instrument;
+use metricrs::{Token, instrument};
+// use metricrs::{Token, global::set_global_registry, instrument, memory::MemoryRegistry};
 
 fn main() {
+    // _ = set_global_registry(MemoryRegistry);
     divan::main();
 }
 
@@ -23,4 +27,14 @@ fn bench_counter() {
 #[bench]
 fn bench_timer() {
     mock_timer();
+}
+
+#[bench]
+fn bench_key() {
+    Token::new("hello", &[("name", "hello"), ("module", "derive")]);
+}
+
+#[bench]
+fn bench_instant_now() {
+    _ = Instant::now().elapsed();
 }

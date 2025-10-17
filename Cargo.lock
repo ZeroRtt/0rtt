@@ -832,6 +832,7 @@ dependencies = [
  "futures-test",
  "log",
  "metricrs-derive",
+ "parking_lot",
  "pretty_env_logger",
 ]
 
