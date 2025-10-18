@@ -1,31 +1,20 @@
-use std::hash::{DefaultHasher, Hasher};
+/// A type variants for instruments. used by `derive` codes.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+pub enum Kind {
+    Counter,
+    Timer,
+    Gauge,
+}
 
 /// `key` id to reference a Measuring instrument
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct Token<'a> {
-    pub hash: u64,
+    /// The instrument type of this token reference to.
+    pub kind: Kind,
+    /// Instrument `name`
     pub name: &'a str,
+    /// Instrument `labels`
     pub labels: &'a [(&'a str, &'a str)],
-}
-
-impl<'a> Token<'a> {
-    /// Create a key from instrument `Name` and `Labels`.
-    pub fn new(name: &'a str, labels: &'a [(&'a str, &'a str)]) -> Self {
-        let mut hasher = DefaultHasher::new();
-
-        hasher.write(name.as_bytes());
-
-        for (key, value) in labels {
-            hasher.write(key.as_bytes());
-            hasher.write(value.as_bytes());
-        }
-
-        Self {
-            hash: hasher.finish(),
-            name,
-            labels,
-        }
-    }
 }
 
 /// Registry implemenation should implement this trait for `instrument counter`.

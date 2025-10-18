@@ -1,55 +1,98 @@
-use std::fmt::Display;
-
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{Error, Ident, ItemFn, LitStr, Token, parse::Parse, parse_macro_input};
+use syn::{Error, Ident, ItemFn, LitStr, Token, braced, parse::Parse, parse_macro_input};
 
 struct InstrumentArgs {
-    pub ident: Ident,
-    pub name: LitStr,
+    pub kind: (Ident, Ident),
+    pub name: (Ident, LitStr),
     pub labels: Vec<(Ident, LitStr)>,
-}
-
-impl Display for InstrumentArgs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "instrument({}", self.name.to_token_stream())?;
-        for (name, value) in &self.labels {
-            write!(f, ", {}={}", name, value.to_token_stream())?;
-        }
-        write!(f, ")")
-    }
 }
 
 impl Parse for InstrumentArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let ident = input.parse().map_err(|err| {
-            Error::new(
-                err.span(),
-                "expect instrument `Type` argument: counter, timer, ..",
-            )
-        })?;
+        let span = input.span();
 
-        let _: Token![,] = input
-            .parse()
-            .map_err(|err| Error::new(err.span(), "expect instrument `Name` argument"))?;
+        let mut kind = None;
+        let mut name = None;
+        let mut labels = None;
 
-        let name = input
-            .parse()
-            .map_err(|err| Error::new(err.span(), "expect instrument `Name` argument"))?;
+        loop {
+            let ident: Ident = input.parse()?;
 
-        let mut tags = vec![];
+            match ident.to_token_stream().to_string().as_str() {
+                "kind" => {
+                    if kind.is_some() {
+                        return Err(Error::new(ident.span(), "Provide argument `kind` twice."));
+                    }
 
-        while let Some(_) = Option::<Token![,]>::parse(input)? {
-            let tag_name: Ident = input.parse()?;
-            let _: Token![=] = input.parse()?;
-            let value: LitStr = input.parse()?;
-            tags.push((tag_name, value));
+                    let _: Token![=] = input.parse()?;
+
+                    let value: Ident = input.parse().map_err(|err| {
+                        Error::new(
+                            err.span(),
+                            "Provide instrument type: `Counter`,`Timer`, ...",
+                        )
+                    })?;
+
+                    kind = Some((ident, value));
+                }
+                "name" => {
+                    if name.is_some() {
+                        return Err(Error::new(ident.span(), "Provide argument `name` twice."));
+                    }
+
+                    let _: Token![=] = input.parse()?;
+
+                    let value: LitStr = input
+                        .parse()
+                        .map_err(|err| Error::new(err.span(), "Provide instrument name."))?;
+
+                    name = Some((ident, value));
+                }
+                "labels" => {
+                    if labels.is_some() {
+                        return Err(Error::new(ident.span(), "Provide argument `labels` twice."));
+                    }
+
+                    let content;
+
+                    braced!(content in input);
+
+                    let mut kv = vec![];
+
+                    loop {
+                        let key: Ident = content.parse()?;
+
+                        let _: Token![:] = content.parse()?;
+
+                        let value: LitStr = content.parse()?;
+
+                        kv.push((key, value));
+
+                        let Some(_): Option<Token![,]> = content.parse()? else {
+                            break;
+                        };
+                    }
+
+                    labels = Some(kv);
+                }
+                _ => {
+                    return Err(Error::new(
+                        ident.span(),
+                        "Unknown argument, expect: `kind`, `name` or `labels`",
+                    ));
+                }
+            }
+
+            let Some(_): Option<Token![,]> = input.parse()? else {
+                break;
+            };
         }
 
         Ok(Self {
-            ident,
-            name,
-            labels: tags,
+            kind: kind.ok_or_else(|| Error::new(span, "Required parameter `kind`"))?,
+            name: name.ok_or_else(|| Error::new(span, "Required parameter `name`"))?,
+            labels: labels.unwrap_or_default(),
         })
     }
 }
@@ -57,18 +100,16 @@ impl Parse for InstrumentArgs {
 /// Create measuring instruments for methods via attribute
 #[proc_macro_attribute]
 pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
-    let InstrumentArgs {
-        ident,
-        name,
-        labels,
-    } = parse_macro_input!(attrs as InstrumentArgs);
+    let InstrumentArgs { kind, name, labels } = parse_macro_input!(attrs as InstrumentArgs);
+
+    let (kind_ident, kind_value) = kind;
+    let (name_ident, name_value) = name;
 
     let labels = labels
         .into_iter()
         .map(|(key, value)| {
-            let key = key.to_string();
             quote! {
-                (#key,#value)
+                (stringify!(#key),#value)
             }
         })
         .collect::<Vec<_>>();
@@ -88,18 +129,24 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote!(#block)
     };
 
-    if ident == "counter" {
+    if kind_value == "Counter" {
         quote! {
             #(#attrs)*
             #vis #sig {
 
-                static TOKEN: std::sync::LazyLock<metricrs::Token<'static>> = std::sync::LazyLock::new(|| {
-                    metricrs::Token::new(#name, &[("rust_module_path",module_path!()),#(#labels),*])
+                static COUNTER: std::sync::LazyLock<Option<metricrs::Counter>> = std::sync::LazyLock::new(|| {
+                    metricrs::global::get_global_registry().map(|registry| {
+                        registry.counter(metricrs::Token {
+                            #kind_ident: metricrs::Kind::#kind_value,
+                            #name_ident: #name_value,
+                            labels: &[("rust_module_path",module_path!()),#(#labels),*],
+                        })
+                    })
                 });
 
-                if let Some(registry) = metricrs::global::get_global_registry() {
+                if let Some(counter) = COUNTER.as_ref() {
                     let r = #block;
-                    registry.counter(*TOKEN).increment(1);
+                    counter.increment(1);
                     r
                 } else {
                     #block
@@ -107,19 +154,25 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
         .into()
-    } else if ident == "timer" {
+    } else if kind_value == "Timer" {
         quote! {
             #(#attrs)*
             #vis #sig {
 
-                static TOKEN: std::sync::LazyLock<metricrs::Token<'static>> = std::sync::LazyLock::new(|| {
-                    metricrs::Token::new(#name, &[("rust_module_path",module_path!()),#(#labels),*])
+                static TIMER: std::sync::LazyLock<Option<metricrs::Histogram>> = std::sync::LazyLock::new(|| {
+                    metricrs::global::get_global_registry().map(|registry| {
+                        registry.histogam(metricrs::Token {
+                            #kind_ident: metricrs::Kind::#kind_value,
+                            #name_ident: #name_value,
+                            labels: &[("rust_module_path",module_path!()),#(#labels),*]
+                        })
+                    })
                 });
 
-                if let Some(registry) = metricrs::global::get_global_registry() {
+                if let Some(timer) = TIMER.as_ref() {
                     let now = std::time::Instant::now();
                     let r = #block;
-                    registry.histogam(*TOKEN).record(now.elapsed().as_secs_f64());
+                    timer.record(now.elapsed().as_secs_f64());
                     r
                 } else {
                     #block
@@ -129,8 +182,8 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         .into()
     } else {
         Error::new(
-            ident.span(),
-            "invalid instrument type, expect: counter, timer, ..",
+            kind_value.span(),
+            "invalid instrument type, see `metricrs::Kind` for more information.",
         )
         .into_compile_error()
         .into()

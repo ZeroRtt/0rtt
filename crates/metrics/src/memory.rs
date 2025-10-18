@@ -4,7 +4,7 @@ use crate::Registry;
 
 /// A builtin in-memory [`Registry`](crate::Registry) implementation works
 /// in tandem with the pull-mode data collector.
-pub struct MemoryRegistry {}
+pub struct MemoryRegistry;
 
 #[allow(unused)]
 impl Registry for MemoryRegistry {

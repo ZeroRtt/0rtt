@@ -8,7 +8,7 @@ use metricrs::instrument;
 fn instrument() {
     // _ = pretty_env_logger::try_init();
 
-    #[instrument(counter, "test.mock_send")]
+    #[instrument(kind = Counter, name = "test.mock_send")]
     fn mock_send() -> usize {
         1
     }
@@ -18,8 +18,8 @@ fn instrument() {
     struct Mock;
 
     impl Mock {
-        #[instrument(timer, "test.mock.async_send")]
-        #[instrument(counter, "test.mock_send")]
+        #[instrument(kind = Timer, name = "test.mock.async_send")]
+        #[instrument(kind = Counter, name = "test.mock_send")]
         async fn send(&mut self) -> usize {
             1
         }
