@@ -1,118 +1,100 @@
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{Error, Ident, ItemFn, LitStr, Token, braced, parse::Parse, parse_macro_input};
+use syn::{Expr, ItemFn, LitStr, Result, meta, parse::Parser, parse_macro_input};
 
-struct InstrumentArgs {
-    pub kind: (Ident, Ident),
-    pub name: (Ident, LitStr),
-    pub labels: Vec<(Ident, LitStr)>,
+struct InstrumentOptions {
+    kind: Option<Expr>,
+    fields: Vec<proc_macro2::TokenStream>,
 }
 
-impl Parse for InstrumentArgs {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let span = input.span();
-
+impl InstrumentOptions {
+    pub fn parse(options: TokenStream) -> Result<Self> {
         let mut kind = None;
-        let mut name = None;
-        let mut labels = None;
+        let mut fields = vec![];
 
-        loop {
-            let ident: Ident = input.parse()?;
-
-            match ident.to_token_stream().to_string().as_str() {
-                "kind" => {
-                    if kind.is_some() {
-                        return Err(Error::new(ident.span(), "Provide argument `kind` twice."));
-                    }
-
-                    let _: Token![=] = input.parse()?;
-
-                    let value: Ident = input.parse().map_err(|err| {
-                        Error::new(
-                            err.span(),
-                            "Provide instrument type: `Counter`,`Timer`, ...",
-                        )
-                    })?;
-
-                    kind = Some((ident, value));
-                }
-                "name" => {
-                    if name.is_some() {
-                        return Err(Error::new(ident.span(), "Provide argument `name` twice."));
-                    }
-
-                    let _: Token![=] = input.parse()?;
-
-                    let value: LitStr = input
-                        .parse()
-                        .map_err(|err| Error::new(err.span(), "Provide instrument name."))?;
-
-                    name = Some((ident, value));
-                }
-                "labels" => {
-                    if labels.is_some() {
-                        return Err(Error::new(ident.span(), "Provide argument `labels` twice."));
-                    }
-
-                    let content;
-
-                    braced!(content in input);
-
-                    let mut kv = vec![];
-
-                    loop {
-                        let key: Ident = content.parse()?;
-
-                        let _: Token![:] = content.parse()?;
-
-                        let value: LitStr = content.parse()?;
-
-                        kv.push((key, value));
-
-                        let Some(_): Option<Token![,]> = content.parse()? else {
-                            break;
-                        };
-                    }
-
-                    labels = Some(kv);
-                }
-                _ => {
-                    return Err(Error::new(
-                        ident.span(),
-                        "Unknown argument, expect: `kind`, `name` or `labels`",
-                    ));
-                }
+        let parser = meta::parser(|meta| {
+            macro_rules! error {
+                ($($t:tt)+) => {
+                    return Err(meta.error(format_args!($($t)+)))
+                };
             }
 
-            let Some(_): Option<Token![,]> = input.parse()? else {
-                break;
+            let Some(ident) = meta.path.get_ident() else {
+                error!("unsupported macro `instrument` option.");
             };
-        }
 
-        Ok(Self {
-            kind: kind.ok_or_else(|| Error::new(span, "Required parameter `kind`"))?,
-            name: name.ok_or_else(|| Error::new(span, "Required parameter `name`"))?,
-            labels: labels.unwrap_or_default(),
-        })
+            match ident.to_string().as_str() {
+                "labels" => {
+                    let mut kv = vec![];
+
+                    meta.parse_nested_meta(|meta| {
+                        let Some(ident) = meta.path.get_ident() else {
+                            error!("expect label `name`.");
+                        };
+
+                        let value: LitStr = meta.value()?.parse()?;
+
+                        kv.push(quote! { (stringify!(#ident), #value) });
+
+                        Ok(())
+                    })?;
+
+                    fields.push(
+                        quote! { #ident: Some(&[("rust_module_path",module_path!()), #(#kv),*]) },
+                    );
+
+                    Ok(())
+                }
+                "kind" => {
+                    let value: proc_macro2::TokenStream = match meta.value() {
+                        Ok(value) => {
+                            if kind.is_some() {
+                                error!("repeated 'instrument' option 'kind'");
+                            }
+                            let expr: Expr = value.parse()?;
+                            kind = Some(expr.clone());
+                            quote! { #ident: Some(#expr) }
+                        }
+                        Err(_) => {
+                            quote! { #ident: None }
+                        }
+                    };
+
+                    fields.push(value);
+
+                    return Ok(());
+                }
+                _ => {
+                    let value: proc_macro2::TokenStream = match meta.value() {
+                        Ok(value) => {
+                            let expr: Expr = value.parse()?;
+                            quote! { #ident: Some(#expr) }
+                        }
+                        Err(_) => {
+                            quote! { #ident: None }
+                        }
+                    };
+
+                    fields.push(value);
+
+                    return Ok(());
+                }
+            }
+        });
+
+        parser.parse(options)?;
+
+        Ok(Self { kind, fields })
     }
 }
 
 /// Create measuring instruments for methods via attribute
 #[proc_macro_attribute]
-pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
-    let InstrumentArgs { kind, name, labels } = parse_macro_input!(attrs as InstrumentArgs);
-
-    let (kind_ident, kind_value) = kind;
-    let (name_ident, name_value) = name;
-
-    let labels = labels
-        .into_iter()
-        .map(|(key, value)| {
-            quote! {
-                (stringify!(#key),#value)
-            }
-        })
-        .collect::<Vec<_>>();
+pub fn instrument(options: TokenStream, item: TokenStream) -> TokenStream {
+    let InstrumentOptions { kind, fields } = match InstrumentOptions::parse(options) {
+        Ok(options) => options,
+        Err(err) => return err.into_compile_error().into(),
+    };
 
     let ItemFn {
         attrs,
@@ -129,18 +111,18 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
         quote!(#block)
     };
 
-    if kind_value == "Counter" {
+    let make_counter = || {
         quote! {
             #(#attrs)*
             #vis #sig {
-
                 static COUNTER: std::sync::LazyLock<Option<metricrs::Counter>> = std::sync::LazyLock::new(|| {
                     metricrs::global::get_global_registry().map(|registry| {
-                        registry.counter(metricrs::Token {
-                            #kind_ident: metricrs::Kind::#kind_value,
-                            #name_ident: #name_value,
-                            labels: &[("rust_module_path",module_path!()),#(#labels),*],
-                        })
+                        use metricrs::*;
+                        use DeriveKind::*;
+                        registry.counter(DeriveOption {
+                            #(#fields,)*
+                            ..Default::default()
+                        }.into())
                     })
                 });
 
@@ -153,19 +135,21 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         }
-        .into()
-    } else if kind_value == "Timer" {
+    };
+
+    let make_timer = || {
         quote! {
             #(#attrs)*
             #vis #sig {
 
                 static TIMER: std::sync::LazyLock<Option<metricrs::Histogram>> = std::sync::LazyLock::new(|| {
                     metricrs::global::get_global_registry().map(|registry| {
-                        registry.histogam(metricrs::Token {
-                            #kind_ident: metricrs::Kind::#kind_value,
-                            #name_ident: #name_value,
-                            labels: &[("rust_module_path",module_path!()),#(#labels),*]
-                        })
+                        use metricrs::*;
+                        use DeriveKind::*;
+                        registry.histogam(DeriveOption {
+                              #(#fields,)*
+                            ..Default::default()
+                        }.into())
                     })
                 });
 
@@ -179,13 +163,14 @@ pub fn instrument(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         }
-        .into()
-    } else {
-        Error::new(
-            kind_value.span(),
-            "invalid instrument type, see `metricrs::Kind` for more information.",
-        )
-        .into_compile_error()
-        .into()
+    };
+
+    if let Some(kind) = kind {
+        match kind.to_token_stream().to_string().as_str() {
+            "Timer" => return make_timer().into(),
+            _ => return make_counter().into(),
+        }
     }
+
+    return make_counter().into();
 }

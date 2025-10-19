@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use divan::bench;
+
 use metricrs::{global::set_global_registry, instrument, memory::MemoryRegistry};
 
 fn main() {
@@ -8,17 +9,23 @@ fn main() {
     divan::main();
 }
 
-#[instrument(kind = Counter, name = "test.mock_send", labels { name: "hello", color: "red"})]
+#[instrument(kind = Counter, name = "test.mock_send", labels(name = "hello", color = "red"))]
 fn mock_counter() -> usize {
     1
 }
 
-#[instrument(kind = Timer, name = "test.mock_send", labels { name: "hello" })]
+#[instrument(
+    kind = Timer,
+    name = "test.timer",
+    labels(
+        name = "pick"
+    )
+)]
 fn mock_timer() -> usize {
     1
 }
 
-#[bench]
+#[bench(threads)]
 fn bench_counter() {
     mock_counter();
 }

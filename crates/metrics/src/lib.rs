@@ -15,4 +15,7 @@ pub mod memory;
 
 #[cfg(feature = "derive")]
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
-pub use metricrs_derive::*;
+mod derive;
+
+#[cfg(feature = "derive")]
+pub use derive::*;

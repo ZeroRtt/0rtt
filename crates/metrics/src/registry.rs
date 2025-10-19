@@ -1,16 +1,6 @@
-/// A type variants for instruments. used by `derive` codes.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub enum Kind {
-    Counter,
-    Timer,
-    Gauge,
-}
-
 /// `key` id to reference a Measuring instrument
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct Token<'a> {
-    /// The instrument type of this token reference to.
-    pub kind: Kind,
     /// Instrument `name`
     pub name: &'a str,
     /// Instrument `labels`
