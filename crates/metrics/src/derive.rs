@@ -23,9 +23,9 @@ pub struct DeriveOption<'a> {
 
 impl<'a> From<DeriveOption<'a>> for Token<'a> {
     fn from(value: DeriveOption<'a>) -> Self {
-        Self {
-            name: value.name.unwrap_or(concat!(module_path!(), column!())),
-            labels: value.labels.unwrap_or_default(),
-        }
+        Self::new(
+            value.name.unwrap_or(concat!(module_path!(), column!())),
+            value.labels.unwrap_or_default(),
+        )
     }
 }

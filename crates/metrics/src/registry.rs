@@ -1,10 +1,36 @@
+use std::hash::{DefaultHasher, Hasher};
+
 /// `key` id to reference a Measuring instrument
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct Token<'a> {
+    pub hash: u64,
     /// Instrument `name`
     pub name: &'a str,
     /// Instrument `labels`
     pub labels: &'a [(&'a str, &'a str)],
+}
+
+impl<'a> Token<'a> {
+    /// Create a new `token` and pre-calculate it's `hash` with [`DefaultHasher`].
+    pub fn new(name: &'a str, labels: &'a [(&'a str, &'a str)]) -> Self {
+        let mut hasher = DefaultHasher::new();
+
+        hasher.write(name.as_bytes());
+        hasher.write_u8(0xff);
+
+        for (key, value) in labels {
+            hasher.write(key.as_bytes());
+            hasher.write_u8(0xff);
+            hasher.write(value.as_bytes());
+            hasher.write_u8(0xff);
+        }
+
+        Self {
+            hash: hasher.finish(),
+            name,
+            labels,
+        }
+    }
 }
 
 /// Registry implemenation should implement this trait for `instrument counter`.
