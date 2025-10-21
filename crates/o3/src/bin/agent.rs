@@ -49,6 +49,8 @@ impl LoopFetch {
         })?;
 
         if query_result.version > self.verson {
+            log::trace!("update metrics metadata: {:?}", query_result.metadatas);
+
             self.verson = query_result.version;
 
             for metadata in query_result.metadatas {
