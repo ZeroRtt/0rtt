@@ -9,3 +9,5 @@ pub mod cli;
 #[cfg(feature = "agent")]
 #[cfg_attr(docsrs, doc(cfg(feature = "agent")))]
 pub mod agent;
+
+pub mod metrics;

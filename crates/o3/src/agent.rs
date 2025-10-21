@@ -19,6 +19,8 @@ use zrquic::{
     quiche,
 };
 
+use crate::metrics::AsyncMetricWrite;
+
 #[allow(unused)]
 /// Forward agent, passes tcp traffic through quic tunnel.
 pub struct Agent {
@@ -99,13 +101,21 @@ impl PoolConnector {
         raddr: SocketAddr,
     ) -> Result<()> {
         let oread = Arc::new(self.open_stream().await?);
+
         let owrite = oread.clone();
 
-        let (mut iread, mut iwrite) = input.into_split();
+        let (mut iread, iwrite) = input.into_split();
 
         tokio::spawn(async move {
             log::trace!("create pipeline, from={}, to={}", raddr, owrite);
-            match copy(&mut iread, &mut owrite.as_ref()).await {
+
+            let mut write = AsyncMetricWrite::new(
+                owrite.as_ref(),
+                "agent.forward",
+                &[("id", &format!("{} => {}", raddr, owrite))],
+            );
+
+            match copy(&mut iread, &mut write).await {
                 Ok(data) => {
                     log::trace!(
                         "pipeline is closed, from={}, to={}, len={}",
@@ -127,6 +137,11 @@ impl PoolConnector {
 
         tokio::spawn(async move {
             log::trace!("create pipeline, from={}, to={}", oread, raddr);
+            let mut iwrite = AsyncMetricWrite::new(
+                iwrite,
+                "agent.backward",
+                &[("id", &format!("{} => {}", oread, raddr))],
+            );
             match copy(&mut oread.as_ref(), &mut iwrite).await {
                 Ok(data) => {
                     log::trace!(
