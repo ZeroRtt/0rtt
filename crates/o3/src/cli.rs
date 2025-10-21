@@ -132,6 +132,10 @@ pub struct Cli {
     #[arg(short, long, default_value_t = false, action)]
     pub debug: bool,
 
+    /// Collect metrics, and publish on `ADDR`.
+    #[arg(short, long, value_name = "ADDR")]
+    pub metrics: Option<SocketAddr>,
+
     #[command(subcommand)]
     pub commands: Commands,
 }

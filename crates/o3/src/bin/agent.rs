@@ -5,6 +5,8 @@ use std::{
 
 use clap::Parser;
 use color_print::ceprintln;
+use metricrs::global::set_global_registry;
+use metricrs_protobuf::registry::ProtoBufRegistry;
 use o3::{
     agent::Agent,
     cli::{Cli, Commands},
@@ -23,6 +25,12 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     if cli.debug {
         pretty_env_logger::try_init_timed().map_err(Error::other)?;
+    }
+
+    if let Some(laddr) = cli.metrics {
+        let registry = ProtoBufRegistry::bind(laddr)?;
+
+        set_global_registry(registry).unwrap();
     }
 
     #[allow(irrefutable_let_patterns)]
