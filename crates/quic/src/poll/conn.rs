@@ -641,72 +641,59 @@ impl QuicConn {
         new: u64,
         readiness: &mut Readiness,
     ) {
-        static MAX_OPEN_STREAMS: u64 = 5;
-
         let is_server = conn.is_server();
 
-        if is_bidi(new) {
-            let mut remote_stream_bidi_seen = self
-                .remote_stream_bidi_seen
-                .map(|v| v + 4)
-                .unwrap_or_else(|| if is_server { 0x0 } else { 0x01 });
+        let remote_stream_seen = if is_bidi(new) {
+            self.remote_stream_bidi_seen
+        } else {
+            self.remote_stream_uni_seen
+        };
 
-            if new > remote_stream_bidi_seen
-                && (new - remote_stream_bidi_seen) / 4 > MAX_OPEN_STREAMS
-            {
-                log::error!("Out of range, scid={}, stream_id={}", conn.trace_id(), new);
-                _ = conn.close(false, 0x0, b"stream_id out of range.");
-            }
-
-            loop {
-                if remote_stream_bidi_seen > new {
-                    self.remote_stream_bidi_seen = Some(new);
-                    break;
-                }
-
+        if let Some(remote_stream_seen) = remote_stream_seen {
+            if new > remote_stream_seen {
                 readiness.insert(
                     Event {
                         kind: EventKind::StreamAccept,
                         is_server,
                         is_error: false,
                         token: self.token,
-                        stream_id: remote_stream_bidi_seen,
+                        stream_id: new,
                     },
                     None,
                 );
-
-                remote_stream_bidi_seen += 4;
+                if is_bidi(new) {
+                    self.remote_stream_bidi_seen = Some(new);
+                } else {
+                    self.remote_stream_uni_seen = Some(new);
+                }
+            } else {
+                readiness.insert(
+                    Event {
+                        kind: EventKind::StreamRecv,
+                        is_server,
+                        is_error: false,
+                        token: self.token,
+                        stream_id: new,
+                    },
+                    None,
+                );
             }
         } else {
-            let mut remote_stream_uni_seen = self
-                .remote_stream_uni_seen
-                .map(|v| v + 4)
-                .unwrap_or_else(|| if is_server { 0x2 } else { 0x03 });
+            readiness.insert(
+                Event {
+                    kind: EventKind::StreamAccept,
+                    is_server,
+                    is_error: false,
+                    token: self.token,
+                    stream_id: new,
+                },
+                None,
+            );
 
-            if new > remote_stream_uni_seen && (new - remote_stream_uni_seen) / 4 > MAX_OPEN_STREAMS
-            {
-                log::error!("Out of range, scid={}, stream_id={}", conn.trace_id(), new);
-                _ = conn.close(false, 0x0, b"stream_id out of range.");
-            }
-
-            loop {
-                if remote_stream_uni_seen > new {
-                    self.remote_stream_uni_seen = Some(new);
-                    break;
-                }
-
-                readiness.insert(
-                    Event {
-                        kind: EventKind::StreamAccept,
-                        is_server,
-                        is_error: false,
-                        token: self.token,
-                        stream_id: remote_stream_uni_seen,
-                    },
-                    None,
-                );
-
-                remote_stream_uni_seen += 4;
+            if is_bidi(new) {
+                self.remote_stream_bidi_seen = Some(new);
+            } else {
+                self.remote_stream_uni_seen = Some(new);
             }
         }
     }

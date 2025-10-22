@@ -8,7 +8,6 @@ use zrquic::poll::{
     server::{Acceptor, ServerGroup, SimpleAddressValidator},
 };
 
-#[allow(unused)]
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
 

@@ -853,8 +853,6 @@ dependencies = [
 [[package]]
 name = "metricrs"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c346c8eff22592347ef12fa368c6449a36b113a2801ec2e0e3b8d1a3c165c35"
 dependencies = [
  "metricrs-derive",
 ]
@@ -862,8 +860,6 @@ dependencies = [
 [[package]]
 name = "metricrs-derive"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "821220ec96e3050c0047c17c9318601ade57146703fe03167d696636b344d745"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -873,8 +869,6 @@ dependencies = [
 [[package]]
 name = "metricrs-protobuf"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5018232c9930d579b19973071647fc0a48658e707cc5ecf5cd31d8ee1ff91725"
 dependencies = [
  "log",
  "metricrs",

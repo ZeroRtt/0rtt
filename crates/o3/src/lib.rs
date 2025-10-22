@@ -10,4 +10,8 @@ pub mod cli;
 #[cfg_attr(docsrs, doc(cfg(feature = "agent")))]
 pub mod agent;
 
+#[cfg(feature = "o3")]
+#[cfg_attr(docsrs, doc(cfg(feature = "o3")))]
+pub mod redirect;
+
 pub mod metrics;

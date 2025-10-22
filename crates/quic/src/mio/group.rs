@@ -444,7 +444,6 @@ mod tests {
 
     use super::*;
 
-    #[allow(unused)]
     fn mock_config(is_server: bool) -> Config {
         use std::path::Path;
 

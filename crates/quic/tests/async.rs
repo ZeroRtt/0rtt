@@ -10,7 +10,6 @@ use zrquic::{
     },
 };
 
-#[allow(unused)]
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
 
@@ -60,7 +59,7 @@ fn mock_config(is_server: bool) -> Config {
 }
 
 #[inline]
-#[allow(unused)]
+
 fn make_acceptor() -> Acceptor {
     Acceptor::new(
         mock_config(true),

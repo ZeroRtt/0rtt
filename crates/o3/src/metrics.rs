@@ -1,8 +1,14 @@
 //! Metrics utilities for o3 projects.
 
-use std::task::Poll;
+use std::{
+    collections::HashMap, io::Result, net::SocketAddr, task::Poll, thread::sleep, time::Duration,
+};
 
 use metricrs::{Counter, Token, global::get_global_registry};
+use metricrs_protobuf::{
+    fetch::Fetch,
+    protos::memory::{Metadata, Query},
+};
 use pin_project::pin_project;
 use tokio::io::AsyncWrite;
 
@@ -33,7 +39,7 @@ where
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+    ) -> std::task::Poll<Result<usize>> {
         let this = self.project();
 
         match this.write.poll_write(cx, buf) {
@@ -52,14 +58,80 @@ where
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
+    ) -> std::task::Poll<Result<()>> {
         self.project().write.poll_flush(cx)
     }
 
     fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
+    ) -> std::task::Poll<Result<()>> {
         self.project().write.poll_shutdown(cx)
+    }
+}
+
+pub struct MetricsPrint {
+    fetch: Fetch,
+    verson: u64,
+    metadatas: HashMap<u64, Metadata>,
+}
+
+impl MetricsPrint {
+    pub fn connect(remote: SocketAddr) -> Result<Self> {
+        Ok(Self {
+            fetch: Fetch::connect(remote)?,
+            verson: 0,
+            metadatas: Default::default(),
+        })
+    }
+
+    pub fn run(&mut self) -> Result<()> {
+        loop {
+            self.fetch_once()?;
+            sleep(Duration::from_secs(10));
+        }
+    }
+
+    fn fetch_once(&mut self) -> Result<()> {
+        let query_result = self.fetch.query(Query {
+            version: self.verson,
+            ..Default::default()
+        })?;
+
+        if query_result.version > self.verson {
+            log::trace!("update metrics metadata: {:?}", query_result.metadatas);
+
+            self.verson = query_result.version;
+
+            self.metadatas.clear();
+
+            for metadata in query_result.metadatas {
+                self.metadatas.insert(metadata.hash, metadata);
+            }
+        }
+
+        for value in query_result.values {
+            if let Some(metadata) = self.metadatas.get(&value.hash) {
+                let labels = metadata
+                    .labels
+                    .iter()
+                    .map(|label| format!("{}={}", label.key, label.value))
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                match metadata.instrument.enum_value_or_default() {
+                    metricrs_protobuf::protos::memory::Instrument::COUNTER => {
+                        log::info!(target: "metrics", "{}, {}, value={}",  metadata.name,labels, value.value);
+                    }
+                    _ => {
+                        log::info!(target: "metrics", "{}, {}, value={}",  metadata.name,labels, f64::from_bits(value.value));
+                    }
+                };
+            } else {
+                log::info!(target: "metrics", "UNKNOWN, hash={}, value={}", value.hash,  value.value);
+            }
+        }
+
+        Ok(())
     }
 }

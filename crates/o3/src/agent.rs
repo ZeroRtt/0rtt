@@ -10,7 +10,7 @@ use std::{
 use parking_lot::{Mutex, RwLock};
 use rand::seq::SliceRandom;
 use tokio::{
-    io::copy,
+    io::{AsyncWriteExt, copy},
     net::{TcpListener, TcpStream},
 };
 use zrquic::{
@@ -21,7 +21,6 @@ use zrquic::{
 
 use crate::metrics::AsyncMetricWrite;
 
-#[allow(unused)]
 /// Forward agent, passes tcp traffic through quic tunnel.
 pub struct Agent {
     /// Listen incoming tcp streams.
@@ -117,7 +116,7 @@ impl PoolConnector {
 
             match copy(&mut iread, &mut write).await {
                 Ok(data) => {
-                    log::trace!(
+                    log::info!(
                         "pipeline is closed, from={}, to={}, len={}",
                         raddr,
                         owrite,
@@ -133,6 +132,8 @@ impl PoolConnector {
                     );
                 }
             }
+
+            _ = write.shutdown();
         });
 
         tokio::spawn(async move {
@@ -144,7 +145,7 @@ impl PoolConnector {
             );
             match copy(&mut oread.as_ref(), &mut iwrite).await {
                 Ok(data) => {
-                    log::trace!(
+                    log::info!(
                         "pipeline is closed, from={}, to={}, len={}",
                         oread,
                         raddr,
@@ -160,6 +161,8 @@ impl PoolConnector {
                     );
                 }
             }
+
+            _ = iwrite.shutdown();
         });
 
         Ok(())
