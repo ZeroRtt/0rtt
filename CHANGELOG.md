@@ -9,6 +9,12 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.16] - 2025-09-13
+
+- o3: Move `it` to a separate [`repository`](https://github.com/ZeroRtt/o3).
+- fixedbuf,ringbuf: bump version.
+- zrquic: rename crate to `zerortt`.
+
 ## [0.1.15] - 2025-09-13
 
 - o3/cli: change default values: `--cc`=bbr, `--mtu`=12000, `--max-ack-delay`=30

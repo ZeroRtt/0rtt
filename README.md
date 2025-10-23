@@ -1,7 +1,6 @@
-# ZeroRtt
+# 0rtt
 
-[![CI](https://github.com/ZeroRtt/ZeroRtt/actions/workflows/ci.yaml/badge.svg)](https://github.com/ZeroRtt/ZeroRtt/actions/workflows/ci.yaml)
+[![CI](https://github.com/ZeroRtt/0rtt/actions/workflows/ci.yaml/badge.svg)](https://github.com/ZeroRtt/0rtt/actions/workflows/ci.yaml)
 
-## o3
-
-A `quic/http3` reverse proxy created by `quico`.
+A low-level quic library based on `quiche` focusing on non-blocking and masive
+connection management.

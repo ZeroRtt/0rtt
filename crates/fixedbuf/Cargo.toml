@@ -5,6 +5,6 @@ edition = "2024"
 license = "MIT"
 name = "fixedbuf"
 repository = "https://github.com/ZeroRtt/ZeroRtt/crates/fixedbuf"
-version = "0.1.0"
+version = "0.1.1"
 
 [dependencies]
