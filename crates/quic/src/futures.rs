@@ -504,14 +504,15 @@ impl QuicStream {
     }
 
     fn shutdown(&self) -> Result<()> {
-        let mut state = self.group.0.state.lock();
-
         log::trace!(
             "stream shutdown, token={:?}, stream_id={}, remote={}",
             self.token,
             self.stream_id,
             self.remote
         );
+
+        let mut state = self.group.0.state.lock();
+
         self.shutdown.store(true, Ordering::SeqCst);
 
         self.group
