@@ -4,7 +4,7 @@ documentation = "https://docs.rs/zerortt"
 edition = "2024"
 license = "MIT"
 name = "zerortt"
-repository = "https://github.com/ZeroRtt/zerortt/crates/quic"
+repository = "https://github.com/ZeroRtt/0rtt/crates/quic"
 version = "0.1.7"
 readme = "../../README.md"
 
