@@ -238,7 +238,6 @@ pub struct QuicConn(Group, Token, bool);
 
 impl Drop for QuicConn {
     fn drop(&mut self) {
-        log::info!("=====================");
         assert!(
             self.0
                 .0
