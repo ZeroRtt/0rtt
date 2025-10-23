@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 name = "ringbuff"
 repository = "https://github.com/ZeroRtt/ZeroRtt/crates/ringbuff"
-version = "0.1.6"
+version = "0.1.7"
 
 [dependencies]
 futures = { version = "^0.3" }

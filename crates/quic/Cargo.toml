@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 name = "zerortt"
 repository = "https://github.com/ZeroRtt/0rtt/crates/quic"
-version = "0.1.7"
+version = "0.1.8"
 readme = "../../README.md"
 
 [dependencies]
