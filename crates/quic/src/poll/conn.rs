@@ -186,7 +186,12 @@ impl QuicConn {
             }
             _ => {
                 if kind.need_retry() {
-                    log::trace!("retry locker={:?}", kind);
+                    log::trace!(
+                        "retry locker={:?}, token={:?}, is_server={}",
+                        kind,
+                        self.token,
+                        unsafe { self.wrapped.get().as_ref().unwrap().is_server() }
+                    );
                     self.reties.insert(kind);
                 }
                 return Err(Error::Busy);

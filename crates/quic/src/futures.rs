@@ -6,7 +6,10 @@ use std::{
     future::poll_fn,
     io::{Error, ErrorKind, Result},
     net::{SocketAddr, ToSocketAddrs},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     task::{Poll, Waker},
 };
 
@@ -160,9 +163,11 @@ impl Group {
 
     #[inline]
     fn on_closed(&self, state: &mut State, token: Token) -> Result<()> {
+        log::trace!("on closed ....");
         // wakeup all pending tasks.
         if let Some(conn) = state.wakers.remove(&token) {
-            for waker in conn.into_values() {
+            for (event, waker) in conn {
+                log::trace!("wakeup, event={:?}", event);
                 waker.wake();
             }
         }
@@ -303,6 +308,8 @@ impl QuicConn {
                     group: self.0.clone(),
                     token: self.1,
                     stream_id,
+                    shutdown: Default::default(),
+                    remote: true,
                 }));
             }
 
@@ -357,6 +364,8 @@ impl QuicConn {
                         group: self.0.clone(),
                         token: self.1,
                         stream_id,
+                        shutdown: Default::default(),
+                        remote: false,
                     }))
                 }
                 Poll::Pending => Poll::Pending,
@@ -371,6 +380,8 @@ pub struct QuicStream {
     group: Group,
     token: Token,
     stream_id: u64,
+    shutdown: AtomicBool,
+    remote: bool,
 }
 
 impl Display for QuicStream {
@@ -390,14 +401,7 @@ impl Debug for QuicStream {
 
 impl Drop for QuicStream {
     fn drop(&mut self) {
-        assert!(
-            self.group
-                .0
-                .group
-                .stream_close(self.token, self.stream_id, 0x0)
-                .would_block()
-                .is_ready()
-        );
+        _ = self.shutdown();
     }
 }
 
@@ -414,6 +418,10 @@ impl QuicStream {
                     ErrorKind::BrokenPipe,
                     "Stopped, backgroud group.",
                 )));
+            }
+
+            if self.shutdown.load(Ordering::SeqCst) {
+                return Poll::Ready(Err(Error::other("Quic stream is shutdown.")));
             }
 
             state
@@ -448,6 +456,13 @@ impl QuicStream {
         let event = Event::StreamRecv(self.stream_id);
 
         poll_fn(|cx| {
+            log::trace!(
+                "stream recv token={:?}, stream_id={}, remote={}",
+                self.token,
+                self.stream_id,
+                self.remote
+            );
+
             let mut state = self.group.0.state.lock();
 
             if state.stopped {
@@ -455,6 +470,10 @@ impl QuicStream {
                     ErrorKind::BrokenPipe,
                     "Stopped, backgroud group.",
                 )));
+            }
+
+            if self.shutdown.load(Ordering::SeqCst) {
+                return Poll::Ready(Ok((0, true)));
             }
 
             state
@@ -482,6 +501,44 @@ impl QuicStream {
             }
         })
         .await
+    }
+
+    fn shutdown(&self) -> Result<()> {
+        let mut state = self.group.0.state.lock();
+
+        log::trace!(
+            "stream shutdown, token={:?}, stream_id={}, remote={}",
+            self.token,
+            self.stream_id,
+            self.remote
+        );
+        self.shutdown.store(true, Ordering::SeqCst);
+
+        self.group
+            .wake(&mut state, self.token, Event::StreamSend(self.stream_id));
+
+        self.group
+            .wake(&mut state, self.token, Event::StreamRecv(self.stream_id));
+
+        if state.stopped {
+            return Err(Error::new(
+                ErrorKind::BrokenPipe,
+                "Stopped, backgroud group.",
+            ));
+        }
+
+        drop(state);
+
+        assert_eq!(
+            self.group
+                .0
+                .group
+                .stream_close(self.token, self.stream_id, 0x0)
+                .would_block()?,
+            Poll::Ready(())
+        );
+
+        Ok(())
     }
 }
 
@@ -534,26 +591,7 @@ mod futures {
             self: std::pin::Pin<&mut Self>,
             _cx: &mut std::task::Context<'_>,
         ) -> Poll<Result<()>> {
-            let state = self.group.0.state.lock();
-
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            assert_eq!(
-                self.group
-                    .0
-                    .group
-                    .stream_close(self.token, self.stream_id, 0x0)
-                    .would_block()?,
-                Poll::Ready(())
-            );
-
+            self.shutdown()?;
             Poll::Ready(Ok(()))
         }
     }
@@ -601,25 +639,7 @@ mod futures {
             self: std::pin::Pin<&mut Self>,
             _cx: &mut std::task::Context<'_>,
         ) -> Poll<Result<()>> {
-            let state = self.group.0.state.lock();
-
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            assert_eq!(
-                self.group
-                    .0
-                    .group
-                    .stream_close(self.token, self.stream_id, 0x0)
-                    .would_block()?,
-                Poll::Ready(())
-            );
+            self.shutdown()?;
 
             Poll::Ready(Ok(()))
         }
@@ -628,6 +648,7 @@ mod futures {
 
 #[cfg(feature = "tokio")]
 mod tokio_impl {
+
     use super::*;
 
     impl tokio::io::AsyncRead for QuicStream {
@@ -679,25 +700,7 @@ mod tokio_impl {
             self: std::pin::Pin<&mut Self>,
             _: &mut std::task::Context<'_>,
         ) -> Poll<std::result::Result<(), std::io::Error>> {
-            let state = self.group.0.state.lock();
-
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            assert_eq!(
-                self.group
-                    .0
-                    .group
-                    .stream_close(self.token, self.stream_id, 0x0)
-                    .would_block()?,
-                Poll::Ready(())
-            );
+            self.shutdown()?;
 
             Poll::Ready(Ok(()))
         }
@@ -752,25 +755,7 @@ mod tokio_impl {
             self: std::pin::Pin<&mut Self>,
             _: &mut std::task::Context<'_>,
         ) -> Poll<std::result::Result<(), std::io::Error>> {
-            let state = self.group.0.state.lock();
-
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            assert_eq!(
-                self.group
-                    .0
-                    .group
-                    .stream_close(self.token, self.stream_id, 0x0)
-                    .would_block()?,
-                Poll::Ready(())
-            );
+            self.shutdown()?;
 
             Poll::Ready(Ok(()))
         }

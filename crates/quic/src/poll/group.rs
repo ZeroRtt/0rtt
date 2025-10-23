@@ -362,39 +362,43 @@ impl Group {
         match conn.stream_recv(stream_id, buf) {
             Ok((recv_size, fin)) => {
                 log::trace!(
-                    "stream recv, scid={:?}, stream_id={}, len={}, fin={}",
+                    "stream recv, scid={:?}, stream_id={}, len={}, fin={}, is_server={}",
                     conn.source_id(),
                     stream_id,
                     recv_size,
-                    fin
+                    fin,
+                    conn.is_server(),
                 );
                 return Ok((recv_size, fin));
             }
             Err(quiche::Error::Done) => {
                 if conn.stream_finished(stream_id) {
                     log::trace!(
-                        "stream recv, scid={:?}, stream_id={}, len={}, fin={}",
+                        "stream recv, scid={:?}, stream_id={}, len={}, fin={}, is_server={}",
                         conn.source_id(),
                         stream_id,
                         0,
-                        true
+                        true,
+                        conn.is_server(),
                     );
 
                     return Ok((0, true));
                 }
 
                 log::trace!(
-                    "stream recv, scid={:?}, stream_id={}, Done",
+                    "stream recv, scid={:?}, stream_id={}, is_server={}, Done",
                     conn.source_id(),
                     stream_id,
+                    conn.is_server(),
                 );
                 return Err(Error::Retry);
             }
             Err(err) => {
                 log::error!(
-                    "stream recv, scid={:?}, stream_id={}, err={}",
+                    "stream recv, scid={:?}, stream_id={}, is_server={}, err={}",
                     conn.source_id(),
                     stream_id,
+                    conn.is_server(),
                     err
                 );
 

@@ -1557,11 +1557,3 @@ dependencies = [
  "thiserror",
  "tokio",
 ]
-
-[[patch.unused]]
-name = "metricrs"
-version = "0.1.2"
-
-[[patch.unused]]
-name = "metricrs-protobuf"
-version = "0.1.2"
