@@ -7,7 +7,6 @@ name: CI
 
 jobs:
   cargo-test:
-    name: Ubuntu
     strategy:
       matrix:
         include:
@@ -15,8 +14,6 @@ jobs:
             os: macos-latest
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
           - os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
