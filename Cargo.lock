@@ -1537,8 +1537,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "zrquic"
-version = "0.1.2"
+name = "zerortt"
+version = "0.1.6"
 dependencies = [
  "boring",
  "crossbeam-utils",

@@ -3,7 +3,7 @@ description = "A low-level quic library based on `quiche` focusing on non-blocki
 documentation = "https://docs.rs/zerortt"
 edition = "2024"
 license = "MIT"
-name = "zrquic"
+name = "zerortt"
 repository = "https://github.com/ZeroRtt/zerortt/crates/quic"
 version = "0.1.6"
 

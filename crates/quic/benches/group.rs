@@ -1,5 +1,5 @@
 use divan::Bencher;
-use zrquic::poll::Group;
+use zerortt::poll::Group;
 
 fn main() {
     divan::main();

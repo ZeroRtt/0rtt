@@ -2,7 +2,7 @@ use std::{net::SocketAddr, task::Poll, time::Duration};
 
 use fixedbuf::ArrayBuf;
 use quiche::{Config, RecvInfo};
-use zrquic::poll::{
+use zerortt::poll::{
     Error, EventKind, Group, Result, StreamKind, Token, WouldBlock,
     client::ClientGroup,
     server::{Acceptor, ServerGroup, SimpleAddressValidator},

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use quiche::Config;
 
-use zrquic::{
+use zerortt::{
     futures::{QuicConn, QuicListener},
     poll::{
         StreamKind,
