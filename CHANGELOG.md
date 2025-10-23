@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.17] - 2025-10-23
+
+- quic: bump version to `0.1.17`. fixed `stream shutdown` bug.
+
 ## [0.1.16] - 2025-09-13
 
 - o3: Move `it` to a separate [`repository`](https://github.com/ZeroRtt/o3).
