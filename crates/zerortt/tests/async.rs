@@ -2,7 +2,6 @@ use std::{sync::Arc, time::Duration};
 
 #[cfg(not(feature = "tokio"))]
 use futures_util::AsyncWriteExt;
-use quiche::Config;
 
 #[cfg(feature = "tokio")]
 use tokio::io::AsyncWriteExt;
@@ -10,6 +9,7 @@ use tokio::io::AsyncWriteExt;
 use zerortt::{
     Acceptor, SimpleAddressValidator, StreamKind,
     mio::futures::{QuicConn, QuicListener},
+    quiche::{self, Config},
 };
 
 fn mock_config(is_server: bool) -> Config {

@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, task::Poll, time::Duration};
 
 use fixedbuf::ArrayBuf;
-use quiche::{Config, RecvInfo};
+use zerortt::quiche::{self, Config, RecvInfo};
 use zerortt::{
     Acceptor, Error, EventKind, Group, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
     Result, SimpleAddressValidator, StreamKind, Token, WouldBlock,

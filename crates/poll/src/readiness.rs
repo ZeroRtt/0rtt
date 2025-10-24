@@ -5,54 +5,7 @@ use std::{
 };
 
 use priority_queue::PriorityQueue;
-
-use crate::poll::utils::is_bidi;
-
-/// Type for readiness events.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub enum EventKind {
-    /// Readiness for `send` operation.
-    Send,
-    /// Readiness for `recv` operation.
-    Recv,
-    /// Client-side connection handshake is completed.
-    Connected,
-    /// Server-side connection handshake is completed.
-    Accept,
-    /// Connection is closed.
-    Closed,
-    /// Readiness for `stream_open` operation.
-    StreamOpenBidi,
-    /// Readiness for `stream_open` operation.
-    StreamOpenUni,
-    /// Readiness for new inbound stream.
-    StreamAccept,
-    /// Readiness for `stream_send` operation.
-    StreamSend,
-    /// Readiness for `stream_recv` operation.
-    StreamRecv,
-    /// Read lock.
-    ReadLock,
-}
-
-/// Associates readiness events with quic connection.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub struct Token(pub u32);
-
-/// Readiness I/O event.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub struct Event {
-    /// Connection token.
-    pub token: Token,
-    /// Type of this event.
-    pub kind: EventKind,
-    /// Event source is a server-side connection.
-    pub is_server: bool,
-    /// Event raised by an I/O error.
-    pub is_error: bool,
-    /// The meaning of this field depends on the [`kind`](Self::kind) field.
-    pub stream_id: u64,
-}
+use zerortt_api::Event;
 
 /// Readiness events.
 #[derive(Default)]
@@ -115,22 +68,5 @@ impl Readiness {
         }
 
         return None;
-    }
-}
-
-/// Stream type.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub enum StreamKind {
-    Uni,
-    Bidi,
-}
-
-impl From<u64> for StreamKind {
-    fn from(value: u64) -> Self {
-        if is_bidi(value) {
-            StreamKind::Bidi
-        } else {
-            StreamKind::Uni
-        }
     }
 }

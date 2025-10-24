@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.19] - 2025-10-24
+
+- sub crates: split `zerortt` into subcrates.
+
 ## [0.1.17] - 2025-10-23
 
 - quic: bump version to `0.1.17`. fixed `stream shutdown` bug.

@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use quiche::ConnectionId;
+use zerortt_api::quiche;
 
 /// Returns the minimum of `v1` and `v2`, ignoring `None`s.
 pub(crate) fn min_of_some<T: Ord>(v1: Option<T>, v2: Option<T>) -> Option<T> {
@@ -50,22 +50,4 @@ pub(crate) fn release_time(
         .filter(|time| {
             time.checked_duration_since(now).unwrap_or_default() > release_timer_threshold
         })
-}
-
-/// Create an new random [`ConnectionId`]
-pub(crate) fn random_conn_id() -> ConnectionId<'static> {
-    let mut buf = vec![0; 20];
-    boring::rand::rand_bytes(&mut buf).unwrap();
-
-    ConnectionId::from_vec(buf)
-}
-
-/// Returns true if the stream was created locally.
-pub(crate) fn is_local(stream_id: u64, is_server: bool) -> bool {
-    (stream_id & 0x1) == (is_server as u64)
-}
-
-/// Returns true if the stream is bidirectional.
-pub(crate) fn is_bidi(stream_id: u64) -> bool {
-    (stream_id & 0x2) == 0
 }

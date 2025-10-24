@@ -1,0 +1,26 @@
+[package]
+description = "Asynchronous Runtime Binding for `zerortt`"
+documentation = "https://docs.rs/zerortt"
+edition = "2024"
+license = "MIT"
+name = "zerortt-futures"
+repository = "https://github.com/ZeroRtt/0rtt/crates/futures"
+version.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+parking_lot = "0.12.4"
+log = { version = "^0.4" }
+futures-io = { version="0.3.31" }
+futures-util = { version="0.3.31" }
+tokio = { version="1.47.1", optional=true }
+
+zerortt-api = { version = "^0.1" , path="../api", default-features = false}
+zerortt-poll = { version = "^0.1" , path="../poll" }
+
+
+[features]
+default = ["client","server"]
+server = ["zerortt-api/server"]
+client = ["zerortt-api/client"]
+tokio = ["dep:tokio"]

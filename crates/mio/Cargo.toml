@@ -1,0 +1,25 @@
+[package]
+description = "A zerortt `QuicBind` implementation based on `mio` library."
+documentation = "https://docs.rs/zerortt"
+edition = "2024"
+license = "MIT"
+name = "zerortt-mio"
+repository = "https://github.com/ZeroRtt/0rtt/crates/mio"
+version.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+thiserror = "^2.0"
+fixedbuf = { version = "^0.1" , path="../fixedbuf" }
+crossbeam-utils = { version="0.8.21" }
+mio = {version = "1.0.4", features=["os-poll","net"] }
+parking_lot = "0.12.4"
+log = { version = "^0.4" }
+
+zerortt-api = { version = "^0.1" , path="../api"}
+zerortt-poll = { version = "^0.1" , path="../poll" }
+zerortt-futures = { version = "^0.1" , path="../futures", optional = true }
+
+[features]
+default = ["futures"]
+futures = ["zerortt-futures"]

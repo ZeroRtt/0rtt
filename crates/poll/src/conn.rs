@@ -9,12 +9,12 @@ use std::{
     time::Instant,
 };
 
-use quiche::Shutdown;
-
-use crate::poll::{
-    Error, Event, EventKind, Readiness, Result, StreamKind, Token, WouldBlock,
-    utils::{delay_send, is_bidi, is_local},
+use zerortt_api::{
+    Error, Event, EventKind, Result, StreamKind, Token, WouldBlock, is_bidi, is_local,
+    quiche::{self, Shutdown},
 };
+
+use crate::{readiness::Readiness, utils::delay_send};
 
 /// Lock type of one `QuicConn`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]

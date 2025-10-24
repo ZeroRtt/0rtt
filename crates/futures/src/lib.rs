@@ -1,4 +1,5 @@
-//! Asynchronous Runtime Binding for `QUIC`.
+//! Asynchronous Runtime Binding for `zerortt`
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -16,12 +17,7 @@ use std::{
 
 use futures_util::FutureExt;
 use parking_lot::Mutex;
-
-use crate::{
-    QuicBind,
-    mio::would_block::WouldBlock,
-    poll::{Acceptor, StreamKind, Token},
-};
+use zerortt_api::{Acceptor, EventKind, QuicBind, StreamKind, Token, WouldBlock};
 
 /// Event types used by `Group` inner.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
@@ -132,22 +128,22 @@ where
         for event in events {
             log::trace!("readiness, event={:?}", event);
             match event.kind {
-                crate::poll::EventKind::Connected => self.on_connected(&mut state, event.token)?,
-                crate::poll::EventKind::Accept => self.on_accept(&mut state, event.token)?,
-                crate::poll::EventKind::Closed => self.on_closed(&mut state, event.token)?,
-                crate::poll::EventKind::StreamOpenBidi => {
+                EventKind::Connected => self.on_connected(&mut state, event.token)?,
+                EventKind::Accept => self.on_accept(&mut state, event.token)?,
+                EventKind::Closed => self.on_closed(&mut state, event.token)?,
+                EventKind::StreamOpenBidi => {
                     self.on_stream_open(&mut state, event.token, StreamKind::Bidi)?
                 }
-                crate::poll::EventKind::StreamOpenUni => {
+                EventKind::StreamOpenUni => {
                     self.on_stream_open(&mut state, event.token, StreamKind::Uni)?
                 }
-                crate::poll::EventKind::StreamAccept => {
+                EventKind::StreamAccept => {
                     self.on_stream_accept(&mut state, event.token, event.stream_id)?
                 }
-                crate::poll::EventKind::StreamSend => {
+                EventKind::StreamSend => {
                     self.on_stream_send(&mut state, event.token, event.stream_id)?
                 }
-                crate::poll::EventKind::StreamRecv => {
+                EventKind::StreamRecv => {
                     self.on_stream_recv(&mut state, event.token, event.stream_id)?
                 }
                 _ => unreachable!("illegal event: {:?}", event),
@@ -938,7 +934,8 @@ pub use server::*;
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
 mod client {
-    use crate::QuicClient;
+
+    use zerortt_api::{QuicClient, quiche};
 
     use super::*;
 

@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    io::Result,
+    io::{Error, Result},
     net::{SocketAddr, ToSocketAddrs},
     task::Poll,
     time::Instant,
@@ -10,16 +10,16 @@ use std::{
 use crossbeam_utils::sync::Parker;
 use mio::{Events, Interest, Waker, net::UdpSocket};
 use parking_lot::Mutex;
-use quiche::RecvInfo;
+
+use zerortt_api::{
+    Acceptor, Event, EventKind, QuicBind, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
+    StreamKind, Token, WouldBlock,
+    quiche::{self, RecvInfo},
+};
 
 use crate::{
-    Acceptor, QuicBind, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
-    mio::{
-        buf::QuicBuf,
-        udp::{QuicSocket, QuicSocketError},
-        would_block::WouldBlock,
-    },
-    poll::{Event, EventKind, StreamKind, Token},
+    buf::QuicBuf,
+    udp::{QuicSocket, QuicSocketError},
 };
 
 struct PollState {
@@ -36,7 +36,7 @@ pub struct Group {
     /// A waker of `mio::Poll`.
     waker: mio::Waker,
     /// quic group.
-    group: crate::poll::Group,
+    group: zerortt_poll::Group,
     /// local bound addresses
     laddrs: HashMap<SocketAddr, usize>,
     /// poll state.
@@ -131,7 +131,11 @@ impl Group {
         loop {
             let mut buf = QuicBuf::new();
 
-            let Poll::Ready(from) = quic_socket.recv_from(&mut buf).would_block()? else {
+            let Poll::Ready(from) = quic_socket
+                .recv_from(&mut buf)
+                .map_err(|err| Error::from(err))
+                .would_block()?
+            else {
                 return Ok(());
             };
 
@@ -169,8 +173,7 @@ impl Group {
                                 Err(err) => return Err(err.into()),
                             }
                         }
-                        Err(crate::poll::Error::Busy) | Err(crate::poll::Error::Retry) => {
-                            log::trace!("park.....");
+                        Err(zerortt_api::Error::Busy) | Err(zerortt_api::Error::Retry) => {
                             parker.park();
                             // try agian.
                             continue;
@@ -183,11 +186,11 @@ impl Group {
             } else {
                 let header =
                     quiche::Header::from_slice(buf.readable_buf_mut(), quiche::MAX_CONN_ID_LEN)
-                        .map_err(crate::poll::Error::Quiche)?;
+                        .map_err(zerortt_api::Error::Quiche)?;
 
                 // for client-side dispatching.
                 loop {
-                    match self.group.recv_(
+                    match self.group.recv_with_connection_id(
                         &header.dcid,
                         buf.readable_buf_mut(),
                         RecvInfo {
@@ -198,8 +201,7 @@ impl Group {
                     ) {
                         Ok(_) => {}
                         // Current connection is busy.
-                        Err(crate::poll::Error::Busy) | Err(crate::poll::Error::Retry) => {
-                            log::trace!("park.....client....");
+                        Err(zerortt_api::Error::Busy) | Err(zerortt_api::Error::Retry) => {
                             parker.park();
                             // try agian.
                             continue;
@@ -217,7 +219,10 @@ impl Group {
         let socket = poll_state.sockets.get_mut(token.0).expect("Quic socket");
 
         // try flush pending packets.
-        _ = socket.flush().would_block()?;
+        _ = socket
+            .flush()
+            .map_err(|err| Error::from(err))
+            .would_block()?;
 
         Ok(())
     }
@@ -335,7 +340,6 @@ impl QuicPoll for Group {
     }
 }
 
-#[cfg(feature = "client")]
 impl QuicClient for Group {
     fn connect(
         &self,
@@ -366,7 +370,7 @@ impl QuicBind for Group {
         S: ToSocketAddrs,
     {
         let poll = mio::Poll::new()?;
-        let group = crate::poll::Group::new();
+        let group = zerortt_poll::Group::new();
 
         let mut sockets = vec![];
         let mut addrs = HashMap::new();

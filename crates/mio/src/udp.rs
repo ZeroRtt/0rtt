@@ -1,8 +1,9 @@
 use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
 use mio::{event::Source, net::UdpSocket};
+use zerortt_api::WouldBlock;
 
-use crate::mio::{buf::QuicBuf, would_block::WouldBlock};
+use crate::buf::QuicBuf;
 
 /// A `poll` error.
 #[derive(Debug, thiserror::Error)]
@@ -119,7 +120,7 @@ impl QuicSocket {
     /// Returns pending buffer size, if success.
     pub fn send_to(&mut self, buf: QuicBuf, target: SocketAddr) -> Result<usize> {
         if self.is_full() {
-            _ = self.flush().would_block()?;
+            _ = self.flush().map_err(std::io::Error::from).would_block()?;
         }
 
         if self.is_full() {
@@ -129,7 +130,7 @@ impl QuicSocket {
         self.sending.push_back((buf, target));
         assert!(!(self.sending.len() > self.sending_buffer_limits));
 
-        _ = self.flush().would_block()?;
+        _ = self.flush().map_err(std::io::Error::from).would_block()?;
 
         Ok(self.sending.len())
     }

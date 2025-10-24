@@ -8,20 +8,21 @@ use std::{
 
 use crossbeam_utils::sync::Unparker;
 use parking_lot::{Mutex, RwLock};
-use quiche::{ConnectionId, RecvInfo, SendInfo};
-
-use crate::{
-    Acceptor, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
-    poll::{
-        Error, Event, Readiness, Result, StreamKind, Token,
-        conn::{LocKind, LockContext, QuicConn},
-        utils::release_time,
-    },
-    utils::random_conn_id,
+use zerortt_api::{
+    Acceptor, Error, Event, QuicClient, QuicPoll, QuicServerTransport, QuicTransport, Result,
+    StreamKind, Token,
+    quiche::{self, ConnectionId, RecvInfo, SendInfo},
+    random_conn_id,
 };
 
 #[cfg(feature = "server")]
-use crate::poll::Handshake;
+use zerortt_api::Handshake;
+
+use crate::{
+    conn::{LocKind, LockContext, QuicConn},
+    readiness::Readiness,
+    utils::release_time,
+};
 
 static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
 
@@ -32,7 +33,7 @@ macro_rules! lock {
         let conn = state
             .conns
             .get(&$token)
-            .ok_or_else(|| Error::NotFound)?
+            .ok_or_else(|| zerortt_api::Error::NotFound)?
             .borrow_mut()
             .try_lock($kind, |ctx| $self.unlock(ctx))?;
 
@@ -101,7 +102,7 @@ impl Group {
 
     /// Process a packet recv.
     /// Processes QUIC packets received from the peer.
-    pub(crate) fn recv_(
+    pub fn recv_with_connection_id(
         &self,
         scid: &ConnectionId<'_>,
         buf: &mut [u8],
@@ -153,7 +154,7 @@ impl Group {
 }
 
 impl QuicPoll for Group {
-    type Error = crate::Error;
+    type Error = zerortt_api::Error;
     /// Wrap and register a new `quiche::Connection`.
     #[inline]
     fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
@@ -377,14 +378,14 @@ impl QuicPoll for Group {
 }
 
 impl QuicTransport for Group {
-    type Error = crate::Error;
+    type Error = zerortt_api::Error;
     /// Processes QUIC packets received from the peer.
     #[inline]
     fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-        self.recv_(&header.dcid, buf, info, None)
+        self.recv_with_connection_id(&header.dcid, buf, info, None)
             .map(|(_, recv_size)| recv_size)
     }
 
@@ -430,6 +431,7 @@ impl QuicTransport for Group {
     }
 }
 
+#[cfg(feature = "server")]
 impl QuicServerTransport for Group {
     fn recv_with_acceptor(
         &self,
@@ -442,7 +444,8 @@ impl QuicServerTransport for Group {
         let header = quiche::Header::from_slice(&mut buf[..recv_size], quiche::MAX_CONN_ID_LEN)
             .map_err(Error::Quiche)?;
 
-        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, unparker) {
+        match self.recv_with_connection_id(&header.dcid, &mut buf[..recv_size], recv_info, unparker)
+        {
             Ok((token, _)) => match self.send(token, buf) {
                 Err(Error::Busy) | Err(Error::Retry) => Ok((
                     0,
@@ -459,7 +462,12 @@ impl QuicServerTransport for Group {
                     let token = self.register(conn)?;
 
                     // Newly registered connections should be idle.
-                    match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, None) {
+                    match self.recv_with_connection_id(
+                        &header.dcid,
+                        &mut buf[..recv_size],
+                        recv_info,
+                        None,
+                    ) {
                         Ok(_) => {}
                         Err(Error::Busy) | Err(Error::Retry) => {
                             unreachable!("Newly registered connections should be idle");
@@ -494,6 +502,7 @@ impl QuicServerTransport for Group {
     }
 }
 
+#[cfg(feature = "server")]
 impl QuicClient for Group {
     fn connect(
         &self,
