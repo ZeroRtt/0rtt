@@ -10,11 +10,18 @@ use crossbeam_utils::sync::Unparker;
 use parking_lot::{Mutex, RwLock};
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
-use crate::poll::{
-    Error, Event, Readiness, Result, StreamKind, Token,
-    conn::{LocKind, LockContext, QuicConn},
-    utils::release_time,
+use crate::{
+    Acceptor, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
+    poll::{
+        Error, Event, Readiness, Result, StreamKind, Token,
+        conn::{LocKind, LockContext, QuicConn},
+        utils::release_time,
+    },
+    utils::random_conn_id,
 };
+
+#[cfg(feature = "server")]
+use crate::poll::Handshake;
 
 static DEFAULT_RELEASE_TIMER_THRESHOLD: Duration = Duration::from_micros(250);
 
@@ -62,79 +69,6 @@ impl Group {
     /// Create a group with default parameters.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Wrap and register a new `quiche::Connection`.
-    #[inline]
-    pub fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
-        let mut state = self.state.lock();
-
-        loop {
-            let token = Token(state.token_next);
-
-            (state.token_next, _) = state.token_next.overflowing_add(1);
-
-            if state.conns.contains_key(&token) {
-                continue;
-            }
-
-            assert!(
-                self.scids
-                    .write()
-                    .insert(wrapped.source_id().into_owned(), token)
-                    .is_none()
-            );
-
-            log::trace!(
-                "register quic connection, token={:?}, trace_id={}",
-                token,
-                wrapped.trace_id()
-            );
-
-            let conn = RefCell::new(QuicConn::new(token, wrapped));
-
-            let guard = conn.borrow_mut().try_lock(LocKind::ReadLock, |context| {
-                conn.borrow_mut().unlock(
-                    context.lock_count,
-                    false,
-                    state.readiness.borrow_mut().deref_mut(),
-                );
-            })?;
-
-            drop(guard);
-
-            state.conns.insert(token, conn);
-
-            return Ok(token);
-        }
-    }
-
-    /// Unwrap a bound `quiche::Connection`
-    #[inline]
-    pub fn deregister(&self, token: Token) -> Result<quiche::Connection> {
-        let mut state = self.state.lock();
-
-        let conn: quiche::Connection = state
-            .conns
-            .remove(&token)
-            .ok_or_else(|| Error::NotFound)?
-            .into_inner()
-            .into();
-
-        drop(state);
-
-        assert_eq!(
-            self.scids.write().remove(&conn.source_id().into_owned()),
-            Some(token)
-        );
-
-        Ok(conn)
-    }
-
-    /// Returns number of connections in the group.
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.state.lock().conns.len()
     }
 
     fn unlock(&self, ctx: LockContext) {
@@ -216,64 +150,86 @@ impl Group {
             }
         }
     }
+}
 
-    /// Processes QUIC packets received from the peer.
-    pub fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
-        let header =
-            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
+impl QuicPoll for Group {
+    type Error = crate::Error;
+    /// Wrap and register a new `quiche::Connection`.
+    #[inline]
+    fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
+        let mut state = self.state.lock();
 
-        self.recv_(&header.dcid, buf, info, None)
-            .map(|(_, recv_size)| recv_size)
+        loop {
+            let token = Token(state.token_next);
+
+            (state.token_next, _) = state.token_next.overflowing_add(1);
+
+            if state.conns.contains_key(&token) {
+                continue;
+            }
+
+            assert!(
+                self.scids
+                    .write()
+                    .insert(wrapped.source_id().into_owned(), token)
+                    .is_none()
+            );
+
+            log::trace!(
+                "register quic connection, token={:?}, trace_id={}",
+                token,
+                wrapped.trace_id()
+            );
+
+            let conn = RefCell::new(QuicConn::new(token, wrapped));
+
+            let guard = conn.borrow_mut().try_lock(LocKind::ReadLock, |context| {
+                conn.borrow_mut().unlock(
+                    context.lock_count,
+                    false,
+                    state.readiness.borrow_mut().deref_mut(),
+                );
+            })?;
+
+            drop(guard);
+
+            state.conns.insert(token, conn);
+
+            return Ok(token);
+        }
     }
 
-    /// Writes a single QUIC packet to be sent to the peer.
-    pub fn send(&self, token: Token, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
-        let mut conn = lock!(self, token, LocKind::Recv);
+    /// Unwrap a bound `quiche::Connection`
+    #[inline]
+    fn deregister(&self, token: Token) -> Result<quiche::Connection> {
+        let mut state = self.state.lock();
 
-        if let Some(release_time) =
-            release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD)
-        {
-            log::trace!(
-                "connection send, scid={:?}, next_release_time={:?}",
-                conn.trace_id(),
-                release_time,
-            );
-            return Err(Error::Retry);
-        }
+        let conn: quiche::Connection = state
+            .conns
+            .remove(&token)
+            .ok_or_else(|| Error::NotFound)?
+            .into_inner()
+            .into();
 
-        // TODO: prevent frequent calls to on_timeout
-        conn.on_timeout();
+        drop(state);
 
-        match conn.send(buf) {
-            Ok((send_size, send_info)) => {
-                log::trace!(
-                    "connection send, scid={:?}, send_size={}, send_info={:?}",
-                    conn.trace_id(),
-                    send_size,
-                    send_info
-                );
-                return Ok((send_size, send_info));
-            }
-            Err(quiche::Error::Done) => {
-                log::trace!("connection send, scid={:?}, done", conn.trace_id());
-                conn.send_done();
-                return Err(Error::Retry);
-            }
-            Err(err) => {
-                log::error!("connection send, scid={:?}, err={}", conn.trace_id(), err);
-                return Err(Error::Quiche(err));
-            }
-        }
+        assert_eq!(
+            self.scids.write().remove(&conn.source_id().into_owned()),
+            Some(token)
+        );
+
+        Ok(conn)
+    }
+
+    /// Returns number of connections in the group.
+    #[inline]
+    fn len(&self) -> usize {
+        self.state.lock().conns.len()
     }
 
     /// Close one connection.
-    pub fn close(
-        &self,
-        token: Token,
-        app: bool,
-        err: u64,
-        reason: Cow<'static, [u8]>,
-    ) -> Result<()> {
+    #[inline]
+    fn close(&self, token: Token, app: bool, err: u64, reason: Cow<'static, [u8]>) -> Result<()> {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
@@ -282,16 +238,26 @@ impl Group {
     }
 
     /// Open a outbound stream.
-    pub fn stream_open(&self, token: Token, kind: StreamKind) -> Result<u64> {
+    #[inline]
+    fn stream_open(
+        &self,
+        token: Token,
+        kind: StreamKind,
+        max_streams_as_error: bool,
+    ) -> Result<u64> {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        conn.borrow_mut()
-            .stream_open(kind, state.readiness.borrow_mut().deref_mut())
+        conn.borrow_mut().stream_open(
+            kind,
+            max_streams_as_error,
+            state.readiness.borrow_mut().deref_mut(),
+        )
     }
 
     /// Shutdown a stream.
-    pub fn stream_shutdown(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
+    #[inline]
+    fn stream_shutdown(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
@@ -300,13 +266,8 @@ impl Group {
     }
 
     /// Writes data to a stream.
-    pub fn stream_send(
-        &self,
-        token: Token,
-        stream_id: u64,
-        buf: &[u8],
-        fin: bool,
-    ) -> Result<usize> {
+    #[inline]
+    fn stream_send(&self, token: Token, stream_id: u64, buf: &[u8], fin: bool) -> Result<usize> {
         let mut conn = lock!(
             self,
             token,
@@ -351,12 +312,8 @@ impl Group {
     }
 
     /// Reads contiguous data from a stream into the provided slice.
-    pub fn stream_recv(
-        &self,
-        token: Token,
-        stream_id: u64,
-        buf: &mut [u8],
-    ) -> Result<(usize, bool)> {
+    #[inline]
+    fn stream_recv(&self, token: Token, stream_id: u64, buf: &mut [u8]) -> Result<(usize, bool)> {
         let mut conn = lock!(self, token, LocKind::StreamRecv(stream_id));
 
         match conn.stream_recv(stream_id, buf) {
@@ -408,36 +365,148 @@ impl Group {
     }
 
     /// Waits for readiness events without blocking current thread and returns possible retry time duration.
-    pub fn poll(&self, events: &mut Vec<Event>) -> Option<Instant> {
+    #[inline]
+    fn poll(&self, events: &mut Vec<Event>) -> Result<Option<Instant>> {
         let state = self.state.lock();
 
-        state
+        Ok(state
             .readiness
             .borrow_mut()
-            .poll(events, DEFAULT_RELEASE_TIMER_THRESHOLD)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn readiness(&self, event: Event, delay_to: Option<Instant>) {
-        let state = self.state.lock();
-        state.readiness.borrow_mut().insert(event, delay_to);
+            .poll(events, DEFAULT_RELEASE_TIMER_THRESHOLD))
     }
 }
 
-/// A poll api for `QUIC` group.
-pub trait Polling {
-    /// Waits for readiness events without blocking current thread
-    /// and returns possible retry time duration.
-    fn poll(&self, events: &mut Vec<Event>) -> Option<Instant>;
+impl QuicTransport for Group {
+    type Error = crate::Error;
+    /// Processes QUIC packets received from the peer.
+    #[inline]
+    fn recv(&self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
+        let header =
+            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(Error::Quiche)?;
 
-    /// Wrap and handle a new `quiche::Connection`.
-    ///
-    /// On success, returns a reference handle [`Token`] to the [`Connection`](quiche::Connection).
-    fn register(&self, wrapped: quiche::Connection) -> Result<Token>;
+        self.recv_(&header.dcid, buf, info, None)
+            .map(|(_, recv_size)| recv_size)
+    }
 
-    /// Unwrap a `quiche::Connection` referenced by the handle [`Token`].
-    fn deregister(&self, token: Token) -> Result<quiche::Connection>;
+    /// Writes a single QUIC packet to be sent to the peer.
+    #[inline]
+    fn send(&self, token: Token, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
+        let mut conn = lock!(self, token, LocKind::Recv);
 
-    /// Returns the number of `QUIC` connections in the group.
-    fn len(&self) -> usize;
+        if let Some(release_time) =
+            release_time(&conn, Instant::now(), DEFAULT_RELEASE_TIMER_THRESHOLD)
+        {
+            log::trace!(
+                "connection send, scid={:?}, next_release_time={:?}",
+                conn.trace_id(),
+                release_time,
+            );
+            return Err(Error::Retry);
+        }
+
+        // TODO: prevent frequent calls to on_timeout
+        conn.on_timeout();
+
+        match conn.send(buf) {
+            Ok((send_size, send_info)) => {
+                log::trace!(
+                    "connection send, scid={:?}, send_size={}, send_info={:?}",
+                    conn.trace_id(),
+                    send_size,
+                    send_info
+                );
+                return Ok((send_size, send_info));
+            }
+            Err(quiche::Error::Done) => {
+                log::trace!("connection send, scid={:?}, done", conn.trace_id());
+                conn.send_done();
+                return Err(Error::Retry);
+            }
+            Err(err) => {
+                log::error!("connection send, scid={:?}, err={}", conn.trace_id(), err);
+                return Err(Error::Quiche(err));
+            }
+        }
+    }
+}
+
+impl QuicServerTransport for Group {
+    fn recv_with_acceptor(
+        &self,
+        acceptor: &mut Acceptor,
+        buf: &mut [u8],
+        recv_size: usize,
+        recv_info: RecvInfo,
+        unparker: Option<&Unparker>,
+    ) -> Result<(usize, SendInfo)> {
+        let header = quiche::Header::from_slice(&mut buf[..recv_size], quiche::MAX_CONN_ID_LEN)
+            .map_err(Error::Quiche)?;
+
+        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, unparker) {
+            Ok((token, _)) => match self.send(token, buf) {
+                Err(Error::Busy) | Err(Error::Retry) => Ok((
+                    0,
+                    SendInfo {
+                        at: Instant::now(),
+                        from: recv_info.to,
+                        to: recv_info.from,
+                    },
+                )),
+                r => r,
+            },
+            Err(Error::NotFound) => match acceptor.handshake(&header, buf, recv_size, recv_info) {
+                Ok(Handshake::Accept(conn)) => {
+                    let token = self.register(conn)?;
+
+                    // Newly registered connections should be idle.
+                    match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, None) {
+                        Ok(_) => {}
+                        Err(Error::Busy) | Err(Error::Retry) => {
+                            unreachable!("Newly registered connections should be idle");
+                        }
+                        Err(err) => return Err(err),
+                    }
+
+                    match self.send(token, buf) {
+                        Err(Error::Busy) | Err(Error::Retry) => Ok((
+                            0,
+                            SendInfo {
+                                at: Instant::now(),
+                                from: recv_info.to,
+                                to: recv_info.from,
+                            },
+                        )),
+                        r => r,
+                    }
+                }
+                Ok(Handshake::Handshake(send_size)) => Ok((
+                    send_size,
+                    SendInfo {
+                        at: Instant::now(),
+                        from: recv_info.to,
+                        to: recv_info.from,
+                    },
+                )),
+                Err(err) => Err(err),
+            },
+            Err(err) => Err(err),
+        }
+    }
+}
+
+impl QuicClient for Group {
+    type Error = crate::Error;
+    fn connect(
+        &self,
+        server_name: Option<&str>,
+        local: std::net::SocketAddr,
+        peer: std::net::SocketAddr,
+        config: &mut quiche::Config,
+    ) -> Result<Token> {
+        let conn = quiche::connect(server_name, &random_conn_id(), local, peer, config)?;
+
+        let token = self.register(conn)?;
+
+        Ok(token)
+    }
 }

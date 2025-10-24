@@ -2,10 +2,9 @@ use std::{net::SocketAddr, task::Poll, time::Duration};
 
 use fixedbuf::ArrayBuf;
 use quiche::{Config, RecvInfo};
-use zerortt::poll::{
-    Error, EventKind, Group, Result, StreamKind, Token, WouldBlock,
-    client::ClientGroup,
-    server::{Acceptor, ServerGroup, SimpleAddressValidator},
+use zerortt::{
+    Acceptor, Error, EventKind, Group, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
+    Result, SimpleAddressValidator, StreamKind, Token, WouldBlock,
 };
 
 fn mock_config(is_server: bool) -> Config {
@@ -88,7 +87,7 @@ fn transfer(acceptor: &mut Acceptor, group: &Group, from: Token) -> Poll<Result<
 
     while send_size > 0 {
         (send_size, send_info) = group
-            .server_dispatch(
+            .recv_with_acceptor(
                 acceptor,
                 buf.writable_buf(),
                 send_size,
@@ -231,7 +230,9 @@ fn test_client_stream_open_bidi() {
         for event in events {
             match event.kind {
                 EventKind::Connected => {
-                    let stream_id = group.stream_open(event.token, StreamKind::Bidi).unwrap();
+                    let stream_id = group
+                        .stream_open(event.token, StreamKind::Bidi, false)
+                        .unwrap();
 
                     group
                         .stream_send(event.token, stream_id, b"hello world", true)
@@ -280,7 +281,9 @@ fn test_client_stream_open_uni() {
         for event in events {
             match event.kind {
                 EventKind::Connected => {
-                    let stream_id = group.stream_open(event.token, StreamKind::Uni).unwrap();
+                    let stream_id = group
+                        .stream_open(event.token, StreamKind::Uni, false)
+                        .unwrap();
 
                     group
                         .stream_send(event.token, stream_id, b"hello world", true)
@@ -331,7 +334,9 @@ fn test_client_stream_open_limits_uni() {
         for event in events {
             match event.kind {
                 EventKind::Connected => {
-                    let stream_id = group.stream_open(event.token, StreamKind::Uni).unwrap();
+                    let stream_id = group
+                        .stream_open(event.token, StreamKind::Uni, false)
+                        .unwrap();
 
                     group
                         .stream_send(event.token, stream_id, b"hello world", true)
@@ -354,7 +359,7 @@ fn test_client_stream_open_limits_uni() {
 
                     assert_eq!(
                         group
-                            .stream_open(_client, StreamKind::Uni)
+                            .stream_open(_client, StreamKind::Uni, false)
                             .expect_err("Retry"),
                         Error::Retry
                     );
@@ -362,7 +367,7 @@ fn test_client_stream_open_limits_uni() {
                 EventKind::StreamOpenUni => {
                     log::trace!("counter: {}", counter);
 
-                    let stream_id = match group.stream_open(event.token, StreamKind::Uni) {
+                    let stream_id = match group.stream_open(event.token, StreamKind::Uni, false) {
                         Ok(stream_id) => stream_id,
                         Err(Error::Retry) => {
                             continue;
@@ -409,7 +414,9 @@ fn test_client_stream_open_limits_bidi() {
         for event in events {
             match event.kind {
                 EventKind::Connected => {
-                    let stream_id = group.stream_open(event.token, StreamKind::Bidi).unwrap();
+                    let stream_id = group
+                        .stream_open(event.token, StreamKind::Bidi, false)
+                        .unwrap();
 
                     group
                         .stream_send(event.token, stream_id, b"hello world", true)
@@ -436,7 +443,7 @@ fn test_client_stream_open_limits_bidi() {
 
                     assert_eq!(
                         group
-                            .stream_open(_client, StreamKind::Bidi)
+                            .stream_open(_client, StreamKind::Bidi, false)
                             .expect_err("Retry"),
                         Error::Retry
                     );
@@ -444,7 +451,7 @@ fn test_client_stream_open_limits_bidi() {
                 EventKind::StreamOpenBidi => {
                     log::trace!("counter: {}", counter);
 
-                    let stream_id = match group.stream_open(event.token, StreamKind::Bidi) {
+                    let stream_id = match group.stream_open(event.token, StreamKind::Bidi, false) {
                         Ok(stream_id) => stream_id,
                         Err(Error::Retry) => {
                             continue;

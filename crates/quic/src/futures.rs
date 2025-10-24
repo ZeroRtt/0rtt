@@ -11,14 +11,16 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     task::{Poll, Waker},
+    time::Instant,
 };
 
 use futures_util::FutureExt;
 use parking_lot::Mutex;
 
 use crate::{
+    QuicPoll,
     mio::would_block::WouldBlock,
-    poll::{StreamKind, Token, client::ClientGroup, server::Acceptor},
+    poll::{Acceptor, StreamKind, Token},
 };
 
 /// Event types used by `Group` inner.
@@ -114,7 +116,7 @@ impl Group {
     fn run_once(&self) -> Result<bool> {
         let mut events = vec![];
 
-        self.0.group.poll(&mut events, None)?;
+        let next_release_time = self.0.group.poll(&mut events)?;
 
         let mut state = self.0.state.lock();
 
@@ -146,6 +148,12 @@ impl Group {
         if self.0.group.len() == 0 && state.stopped {
             log::trace!("background stopped.");
             return Ok(true);
+        }
+
+        if let Some(next_release_time) = next_release_time
+            .and_then(|next_release_time| next_release_time.checked_duration_since(Instant::now()))
+        {
+            std::thread::sleep(next_release_time);
         }
 
         Ok(false)
@@ -534,7 +542,7 @@ impl QuicStream {
             self.group
                 .0
                 .group
-                .stream_close(self.token, self.stream_id, 0x0)
+                .stream_shutdown(self.token, self.stream_id, 0x0)
                 .would_block()?,
             Poll::Ready(())
         );
@@ -843,6 +851,8 @@ pub use server::*;
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
 mod client {
+    use crate::QuicClient;
+
     use super::*;
 
     /// Connector for `QUIC` client-side.

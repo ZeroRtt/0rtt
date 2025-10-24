@@ -240,7 +240,12 @@ impl QuicConn {
     }
 
     /// Shutdown specific stream's read/write.
-    pub fn stream_open(&mut self, kind: StreamKind, readiness: &mut Readiness) -> Result<u64> {
+    pub fn stream_open(
+        &mut self,
+        kind: StreamKind,
+        max_streams_as_error: bool,
+        readiness: &mut Readiness,
+    ) -> Result<u64> {
         let _guard = self.try_lock_prv(LocKind::StreamOpen(kind))?;
 
         match self.stream_open_prv(
@@ -253,7 +258,11 @@ impl QuicConn {
 
                 self.unlock(_guard.lock_count, false, readiness);
 
-                Err(Error::Retry)
+                if max_streams_as_error {
+                    Err(Error::MaxStreams)
+                } else {
+                    Err(Error::Retry)
+                }
             }
             r => {
                 self.unlock(_guard.lock_count, false, readiness);

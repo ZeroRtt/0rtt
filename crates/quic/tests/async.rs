@@ -8,11 +8,8 @@ use quiche::Config;
 use tokio::io::AsyncWriteExt;
 
 use zerortt::{
+    Acceptor, SimpleAddressValidator, StreamKind,
     futures::{QuicConn, QuicListener},
-    poll::{
-        StreamKind,
-        server::{Acceptor, SimpleAddressValidator},
-    },
 };
 
 fn mock_config(is_server: bool) -> Config {
@@ -72,219 +69,219 @@ fn make_acceptor() -> Acceptor {
     )
 }
 
-// #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-// async fn connect() {
-//     // pretty_env_logger::init_timed();
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn connect() {
+    // pretty_env_logger::init_timed();
 
-//     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
-//     let remote_addr = server.local_addrs().copied().next().unwrap();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
 
-//     let _ = QuicConn::connect(
-//         None,
-//         "127.0.0.1:0".parse().unwrap(),
-//         remote_addr,
-//         &mut mock_config(false),
-//     )
-//     .await
-//     .unwrap();
-// }
+    let _ = QuicConn::connect(
+        None,
+        "127.0.0.1:0".parse().unwrap(),
+        remote_addr,
+        &mut mock_config(false),
+    )
+    .await
+    .unwrap();
+}
 
-// #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-// async fn accept() {
-//     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
-//     let remote_addr = server.local_addrs().copied().next().unwrap();
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn accept() {
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
 
-//     tokio::spawn(async move {
-//         let _ = QuicConn::connect(
-//             None,
-//             "127.0.0.1:0".parse().unwrap(),
-//             remote_addr,
-//             &mut mock_config(false),
-//         )
-//         .await
-//         .unwrap();
-//     });
+    tokio::spawn(async move {
+        let _ = QuicConn::connect(
+            None,
+            "127.0.0.1:0".parse().unwrap(),
+            remote_addr,
+            &mut mock_config(false),
+        )
+        .await
+        .unwrap();
+    });
 
-//     server.accept().await.unwrap();
-// }
+    server.accept().await.unwrap();
+}
 
-// #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-// async fn stream_bidi() {
-//     // _ = pretty_env_logger::try_init_timed();
-//     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
-//     let remote_addr = server.local_addrs().copied().next().unwrap();
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn stream_bidi() {
+    // _ = pretty_env_logger::try_init_timed();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
 
-//     let client_conn = QuicConn::connect(
-//         None,
-//         "127.0.0.1:0".parse().unwrap(),
-//         remote_addr,
-//         &mut mock_config(false),
-//     )
-//     .await
-//     .unwrap();
+    let client_conn = QuicConn::connect(
+        None,
+        "127.0.0.1:0".parse().unwrap(),
+        remote_addr,
+        &mut mock_config(false),
+    )
+    .await
+    .unwrap();
 
-//     let server_conn = server.accept().await.unwrap();
+    let server_conn = server.accept().await.unwrap();
 
-//     tokio::spawn(async move {
-//         loop {
-//             let stream = server_conn.accept().await.unwrap();
+    tokio::spawn(async move {
+        loop {
+            let stream = server_conn.accept().await.unwrap();
 
-//             let mut buf = vec![0; 100];
+            let mut buf = vec![0; 100];
 
-//             let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
-//             assert_eq!(fin, true);
-//             stream.send(&buf[..read_size], true).await.unwrap();
-//         }
-//     });
+            let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
+            assert_eq!(fin, true);
+            stream.send(&buf[..read_size], true).await.unwrap();
+        }
+    });
 
-//     for i in 0..100 {
-//         let stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
+    for i in 0..100 {
+        let stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
 
-//         let msg = format!("Send {}", i);
+        let msg = format!("Send {}", i);
 
-//         let len = stream.send(msg.as_bytes(), true).await.unwrap();
+        let len = stream.send(msg.as_bytes(), true).await.unwrap();
 
-//         log::trace!("send({}): {}", i, len);
+        log::trace!("send({}): {}", i, len);
 
-//         let mut buf = vec![0; 100];
+        let mut buf = vec![0; 100];
 
-//         let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
-//         log::trace!("recv({}): {}", i, read_size);
-//         assert_eq!(fin, true);
-//         assert_eq!(&buf[..read_size], msg.as_bytes());
-//     }
-// }
+        let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
+        log::trace!("recv({}): {}", i, read_size);
+        assert_eq!(fin, true);
+        assert_eq!(&buf[..read_size], msg.as_bytes());
+    }
+}
 
-// #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-// async fn stream_uni() {
-//     // _ = pretty_env_logger::try_init_timed();
-//     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
-//     let remote_addr = server.local_addrs().copied().next().unwrap();
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn stream_uni() {
+    // _ = pretty_env_logger::try_init_timed();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
 
-//     let client_conn = QuicConn::connect(
-//         None,
-//         "127.0.0.1:0".parse().unwrap(),
-//         remote_addr,
-//         &mut mock_config(false),
-//     )
-//     .await
-//     .unwrap();
+    let client_conn = QuicConn::connect(
+        None,
+        "127.0.0.1:0".parse().unwrap(),
+        remote_addr,
+        &mut mock_config(false),
+    )
+    .await
+    .unwrap();
 
-//     let server_conn = server.accept().await.unwrap();
+    let server_conn = server.accept().await.unwrap();
 
-//     tokio::spawn(async move {
-//         loop {
-//             let stream = server_conn.accept().await.unwrap();
+    tokio::spawn(async move {
+        loop {
+            let stream = server_conn.accept().await.unwrap();
 
-//             let mut buf = vec![0; 100];
+            let mut buf = vec![0; 100];
 
-//             let (_, fin) = stream.recv(&mut buf).await.unwrap();
-//             assert_eq!(fin, true);
-//         }
-//     });
+            let (_, fin) = stream.recv(&mut buf).await.unwrap();
+            assert_eq!(fin, true);
+        }
+    });
 
-//     for i in 0..100 {
-//         let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
+    for i in 0..100 {
+        let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
 
-//         let msg = format!("Send {}", i);
+        let msg = format!("Send {}", i);
 
-//         let len = stream.send(msg.as_bytes(), true).await.unwrap();
+        let len = stream.send(msg.as_bytes(), true).await.unwrap();
 
-//         log::trace!("send({}): {}", i, len);
-//     }
-// }
+        log::trace!("send({}): {}", i, len);
+    }
+}
 
-// #[cfg(not(target_os = "windows"))]
-// #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-// async fn stream_io() {
-//     // _ = pretty_env_logger::try_init_timed();
-//     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
-//     let remote_addr = server.local_addrs().copied().next().unwrap();
+#[cfg(not(target_os = "windows"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn stream_io() {
+    // _ = pretty_env_logger::try_init_timed();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
 
-//     let client_conn = QuicConn::connect(
-//         None,
-//         "127.0.0.1:0".parse().unwrap(),
-//         remote_addr,
-//         &mut mock_config(false),
-//     )
-//     .await
-//     .unwrap();
+    let client_conn = QuicConn::connect(
+        None,
+        "127.0.0.1:0".parse().unwrap(),
+        remote_addr,
+        &mut mock_config(false),
+    )
+    .await
+    .unwrap();
 
-//     let server_conn = server.accept().await.unwrap();
+    let server_conn = server.accept().await.unwrap();
 
-//     tokio::spawn(async move {
-//         loop {
-//             #[cfg(not(feature = "tokio"))]
-//             use futures_util::AsyncReadExt;
-//             #[cfg(feature = "tokio")]
-//             use tokio::io::AsyncReadExt;
+    tokio::spawn(async move {
+        loop {
+            #[cfg(not(feature = "tokio"))]
+            use futures_util::AsyncReadExt;
+            #[cfg(feature = "tokio")]
+            use tokio::io::AsyncReadExt;
 
-//             let mut stream = server_conn.accept().await.unwrap();
+            let mut stream = server_conn.accept().await.unwrap();
 
-//             let mut buf = vec![0; 100];
+            let mut buf = vec![0; 100];
 
-//             let read_size = stream.read(&mut buf).await.unwrap();
-//             stream.send(&buf[..read_size], true).await.unwrap();
-//         }
-//     });
+            let read_size = stream.read(&mut buf).await.unwrap();
+            stream.send(&buf[..read_size], true).await.unwrap();
+        }
+    });
 
-//     for i in 0..100 {
-//         #[cfg(not(feature = "tokio"))]
-//         use futures_util::{AsyncReadExt, AsyncWriteExt};
-//         #[cfg(feature = "tokio")]
-//         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-//         let mut stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
+    for i in 0..100 {
+        #[cfg(not(feature = "tokio"))]
+        use futures_util::{AsyncReadExt, AsyncWriteExt};
+        #[cfg(feature = "tokio")]
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
 
-//         let msg = format!("Send {}", i);
+        let msg = format!("Send {}", i);
 
-//         stream.write_all(msg.as_bytes()).await.unwrap();
+        stream.write_all(msg.as_bytes()).await.unwrap();
 
-//         let mut buf = vec![0; 100];
+        let mut buf = vec![0; 100];
 
-//         let read_size = stream.read(&mut buf).await.unwrap();
-//         log::trace!("recv({}): {}", i, read_size);
-//         assert_eq!(&buf[..read_size], msg.as_bytes());
-//     }
-// }
+        let read_size = stream.read(&mut buf).await.unwrap();
+        log::trace!("recv({}): {}", i, read_size);
+        assert_eq!(&buf[..read_size], msg.as_bytes());
+    }
+}
 
-// #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-// async fn multi_conn() {
-//     // _ = pretty_env_logger::try_init_timed();
-//     let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
-//     let remote_addr = server.local_addrs().copied().next().unwrap();
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+async fn multi_conn() {
+    // _ = pretty_env_logger::try_init_timed();
+    let server = QuicListener::bind("127.0.0.1:0", make_acceptor()).unwrap();
+    let remote_addr = server.local_addrs().copied().next().unwrap();
 
-//     tokio::spawn(async move {
-//         loop {
-//             let server_conn = server.accept().await.unwrap();
+    tokio::spawn(async move {
+        loop {
+            let server_conn = server.accept().await.unwrap();
 
-//             let stream = server_conn.accept().await.unwrap();
+            let stream = server_conn.accept().await.unwrap();
 
-//             let mut buf = vec![0; 100];
+            let mut buf = vec![0; 100];
 
-//             let (_, fin) = stream.recv(&mut buf).await.unwrap();
-//             assert_eq!(fin, true);
-//         }
-//     });
+            let (_, fin) = stream.recv(&mut buf).await.unwrap();
+            assert_eq!(fin, true);
+        }
+    });
 
-//     for i in 0..100 {
-//         let client_conn = QuicConn::connect(
-//             None,
-//             "127.0.0.1:0".parse().unwrap(),
-//             remote_addr,
-//             &mut mock_config(false),
-//         )
-//         .await
-//         .unwrap();
+    for i in 0..100 {
+        let client_conn = QuicConn::connect(
+            None,
+            "127.0.0.1:0".parse().unwrap(),
+            remote_addr,
+            &mut mock_config(false),
+        )
+        .await
+        .unwrap();
 
-//         let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
+        let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
 
-//         let msg = format!("Send {}", i);
+        let msg = format!("Send {}", i);
 
-//         let len = stream.send(msg.as_bytes(), true).await.unwrap();
+        let len = stream.send(msg.as_bytes(), true).await.unwrap();
 
-//         log::trace!("send({}): {}", i, len);
-//     }
-// }
+        log::trace!("send({}): {}", i, len);
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn stream_shutdown() {

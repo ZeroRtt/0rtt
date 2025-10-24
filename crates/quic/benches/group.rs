@@ -1,5 +1,5 @@
 use divan::Bencher;
-use zerortt::poll::Group;
+use zerortt::{Group, QuicPoll};
 
 fn main() {
     divan::main();
@@ -11,6 +11,6 @@ fn bench_poll(bencher: Bencher) {
 
     bencher.bench(|| {
         let mut events = vec![];
-        group.poll(&mut events);
+        group.poll(&mut events).unwrap();
     });
 }

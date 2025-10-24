@@ -10,10 +10,12 @@ pub use errors::*;
 mod group;
 pub use group::*;
 
-#[cfg(feature = "client")]
-#[cfg_attr(docsrs, doc(cfg(feature = "client")))]
-pub mod client;
+mod api;
+pub use api::*;
 
 #[cfg(feature = "server")]
 #[cfg_attr(docsrs, doc(cfg(feature = "server")))]
-pub mod server;
+mod acceptor;
+
+#[cfg(feature = "server")]
+pub use acceptor::*;

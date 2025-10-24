@@ -1,10 +1,10 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    io::{Error, Result},
+    io::Result,
     net::{SocketAddr, ToSocketAddrs},
     task::Poll,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use crossbeam_utils::sync::Parker;
@@ -13,17 +13,13 @@ use parking_lot::Mutex;
 use quiche::RecvInfo;
 
 use crate::{
+    Acceptor, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
     mio::{
         buf::QuicBuf,
         udp::{QuicSocket, QuicSocketError},
         would_block::WouldBlock,
     },
-    poll::{
-        Event, EventKind, StreamKind, Token,
-        client::ClientGroup,
-        server::{Acceptor, ServerGroup},
-        utils::min_of_some,
-    },
+    poll::{Event, EventKind, StreamKind, Token},
 };
 
 struct PollState {
@@ -89,152 +85,6 @@ impl Group {
     /// Returns local bound addresses.
     pub fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
         self.laddrs.keys()
-    }
-
-    /// Returns number of connections in the group.
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.group.len()
-    }
-
-    /// Wrap and register a new `quiche::Connection`.
-    #[inline]
-    pub fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
-        let token = self.group.register(wrapped);
-
-        self.waker.wake()?;
-
-        Ok(token?)
-    }
-
-    /// Unwrap a bound `quiche::Connection`
-    #[inline]
-    pub fn deregister(&self, token: Token) -> Result<quiche::Connection> {
-        let conn = self.group.deregister(token);
-
-        self.waker.wake()?;
-
-        Ok(conn?)
-    }
-
-    /// Close one wrapped `quiche::Connection`
-    #[inline]
-    pub fn close(
-        &self,
-        token: Token,
-        app: bool,
-        err: u64,
-        reason: Cow<'static, [u8]>,
-    ) -> Result<()> {
-        let r = self.group.close(token, app, err, reason);
-
-        self.waker.wake()?;
-
-        Ok(r?)
-    }
-
-    /// Open a new outbound stream.
-    pub fn stream_open(
-        &self,
-        token: Token,
-        kind: StreamKind,
-        max_streams_as_error: bool,
-    ) -> Result<u64> {
-        match self.group.stream_open(token, kind) {
-            Err(crate::poll::Error::Retry) => {
-                self.waker.wake()?;
-
-                if max_streams_as_error {
-                    return Err(Error::other("MAX_STREMAS"));
-                }
-
-                return Err(crate::poll::Error::Retry.into());
-            }
-            r => {
-                self.waker.wake()?;
-
-                Ok(r?)
-            }
-        }
-    }
-
-    /// Shutdown a stream.
-    #[inline]
-    pub fn stream_close(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
-        let r = self.group.stream_shutdown(token, stream_id, err);
-
-        self.waker.wake()?;
-
-        Ok(r?)
-    }
-
-    /// Writes data to a stream.
-    #[inline]
-    pub fn stream_send(
-        &self,
-        token: Token,
-        stream_id: u64,
-        buf: &[u8],
-        fin: bool,
-    ) -> Result<usize> {
-        let send_size = self.group.stream_send(token, stream_id, buf, fin);
-
-        self.waker.wake()?;
-
-        Ok(send_size?)
-    }
-
-    /// Reads contiguous data from a stream into the provided slice.
-    #[inline]
-    pub fn stream_recv(
-        &self,
-        token: Token,
-        stream_id: u64,
-        buf: &mut [u8],
-    ) -> Result<(usize, bool)> {
-        let r = self.group.stream_recv(token, stream_id, buf);
-
-        self.waker.wake()?;
-
-        Ok(r?)
-    }
-
-    /// Waits for readiness events.
-    pub fn poll(&self, events: &mut Vec<Event>, timeout: Option<Duration>) -> Result<()> {
-        let deadline = timeout.map(|timeout| Instant::now() + timeout);
-
-        let mut poll_state = self.state.lock();
-
-        loop {
-            let next_release_time = self.group.poll(events);
-
-            // filter events: `Send` and `Recv`.
-            for event in events.drain(..).collect::<Vec<_>>() {
-                match event.kind {
-                    EventKind::Send => {
-                        self.on_quic_send(&mut poll_state, event.token)?;
-                    }
-                    EventKind::Recv => {
-                        self.on_quic_recv(&mut poll_state, event.token)?;
-                    }
-                    _ => events.push(event),
-                }
-            }
-
-            // Readiness `events` is not empty, returns immediately.
-            if !events.is_empty() {
-                return Ok(());
-            }
-
-            // check if timeout.
-            if let Some(deadline) = deadline {
-                if !(deadline > Instant::now()) {
-                    return Ok(());
-                }
-            }
-
-            self.mio_poll_once(&mut poll_state, min_of_some(deadline, next_release_time))?;
-        }
     }
 
     fn mio_poll_once(&self, poll_state: &mut PollState, deadline: Option<Instant>) -> Result<()> {
@@ -333,7 +183,7 @@ impl Group {
             if let Some(acceptor) = &mut poll_state.acceptor {
                 // for server-side dispatching.
                 loop {
-                    match self.group.server_dispatch(
+                    match self.group.recv_with_acceptor(
                         acceptor,
                         buf.writable_buf(),
                         read_size,
@@ -416,135 +266,135 @@ impl Group {
     }
 }
 
-#[cfg(feature = "client")]
-impl ClientGroup for Group {
+impl QuicPoll for Group {
+    type Error = std::io::Error;
+    /// Returns number of connections in the group.
     #[inline]
+    fn len(&self) -> usize {
+        self.group.len()
+    }
+
+    /// Wrap and register a new `quiche::Connection`.
+    #[inline]
+    fn register(&self, wrapped: quiche::Connection) -> Result<Token> {
+        let token = self.group.register(wrapped);
+
+        self.waker.wake()?;
+
+        Ok(token?)
+    }
+
+    /// Unwrap a bound `quiche::Connection`
+    #[inline]
+    fn deregister(&self, token: Token) -> Result<quiche::Connection> {
+        let conn = self.group.deregister(token);
+
+        self.waker.wake()?;
+
+        Ok(conn?)
+    }
+
+    /// Close one wrapped `quiche::Connection`
+    #[inline]
+    fn close(&self, token: Token, app: bool, err: u64, reason: Cow<'static, [u8]>) -> Result<()> {
+        let r = self.group.close(token, app, err, reason);
+
+        self.waker.wake()?;
+
+        Ok(r?)
+    }
+
+    /// Open a new outbound stream.
+    fn stream_open(
+        &self,
+        token: Token,
+        kind: StreamKind,
+        max_streams_as_error: bool,
+    ) -> Result<u64> {
+        let r = self.group.stream_open(token, kind, max_streams_as_error);
+
+        self.waker.wake()?;
+
+        Ok(r?)
+    }
+
+    /// Shutdown a stream.
+    #[inline]
+    fn stream_shutdown(&self, token: Token, stream_id: u64, err: u64) -> Result<()> {
+        let r = self.group.stream_shutdown(token, stream_id, err);
+
+        self.waker.wake()?;
+
+        Ok(r?)
+    }
+
+    /// Writes data to a stream.
+    #[inline]
+    fn stream_send(&self, token: Token, stream_id: u64, buf: &[u8], fin: bool) -> Result<usize> {
+        let send_size = self.group.stream_send(token, stream_id, buf, fin);
+
+        self.waker.wake()?;
+
+        Ok(send_size?)
+    }
+
+    /// Reads contiguous data from a stream into the provided slice.
+    #[inline]
+    fn stream_recv(&self, token: Token, stream_id: u64, buf: &mut [u8]) -> Result<(usize, bool)> {
+        let r = self.group.stream_recv(token, stream_id, buf);
+
+        self.waker.wake()?;
+
+        Ok(r?)
+    }
+
+    /// Waits for readiness events.
+    fn poll(&self, events: &mut Vec<Event>) -> Result<Option<Instant>> {
+        let mut poll_state = self.state.lock();
+
+        loop {
+            let next_release_time = self.group.poll(events)?;
+
+            // filter events: `Send` and `Recv`.
+            for event in events.drain(..).collect::<Vec<_>>() {
+                match event.kind {
+                    EventKind::Send => {
+                        self.on_quic_send(&mut poll_state, event.token)?;
+                    }
+                    EventKind::Recv => {
+                        self.on_quic_recv(&mut poll_state, event.token)?;
+                    }
+                    _ => events.push(event),
+                }
+            }
+
+            // Readiness `events` is not empty, returns immediately.
+            if !events.is_empty() {
+                return Ok(None);
+            }
+
+            self.mio_poll_once(&mut poll_state, next_release_time)?;
+        }
+    }
+}
+
+#[cfg(feature = "client")]
+impl QuicClient for Group {
+    type Error = std::io::Error;
+
     fn connect(
         &self,
         server_name: Option<&str>,
         local: SocketAddr,
         peer: SocketAddr,
         config: &mut quiche::Config,
-    ) -> crate::poll::Result<Token> {
+    ) -> std::result::Result<Token, Self::Error> {
         assert!(self.laddrs.contains_key(&local), "invalid local address.");
 
         let token = self.group.connect(server_name, local, peer, config);
 
-        _ = self.waker.wake();
+        self.waker.wake()?;
 
         Ok(token?)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use quiche::Config;
-
-    use crate::poll::server::SimpleAddressValidator;
-
-    use super::*;
-
-    fn mock_config(is_server: bool) -> Config {
-        use std::path::Path;
-
-        let mut config = Config::new(quiche::PROTOCOL_VERSION).unwrap();
-
-        config.set_initial_max_data(10_000_000);
-        config.set_initial_max_stream_data_bidi_local(1024 * 1024);
-        config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
-        config.set_initial_max_stream_data_uni(1024 * 1024);
-        config.set_initial_max_streams_bidi(1);
-        config.set_initial_max_streams_uni(1);
-
-        config.verify_peer(true);
-
-        // if is_server {
-        let root_path = Path::new(env!("CARGO_MANIFEST_DIR"));
-
-        log::debug!("test run dir {:?}", root_path);
-
-        if is_server {
-            config
-                .load_cert_chain_from_pem_file(root_path.join("cert/server.crt").to_str().unwrap())
-                .unwrap();
-
-            config
-                .load_priv_key_from_pem_file(root_path.join("cert/server.key").to_str().unwrap())
-                .unwrap();
-        } else {
-            config
-                .load_cert_chain_from_pem_file(root_path.join("cert/client.crt").to_str().unwrap())
-                .unwrap();
-
-            config
-                .load_priv_key_from_pem_file(root_path.join("cert/client.key").to_str().unwrap())
-                .unwrap();
-        }
-
-        config
-            .load_verify_locations_from_file(root_path.join("cert/rasi_ca.pem").to_str().unwrap())
-            .unwrap();
-
-        config.set_application_protos(&[b"test"]).unwrap();
-
-        config.set_max_idle_timeout(60000);
-
-        config
-    }
-
-    #[test]
-    fn test_poll_timeout() {
-        let group = Group::bind(
-            "127.0.0.1:0",
-            Some(Acceptor::new(
-                mock_config(true),
-                SimpleAddressValidator::new(Duration::from_secs(10)),
-            )),
-        )
-        .unwrap();
-
-        let mut events = vec![];
-
-        group
-            .poll(&mut events, Some(Duration::from_millis(50)))
-            .unwrap();
-
-        assert_eq!(events.len(), 0);
-
-        let event = Event {
-            token: Token(0),
-            kind: EventKind::Accept,
-            is_server: false,
-            is_error: false,
-            stream_id: 1,
-        };
-
-        group
-            .group
-            .readiness(event, Some(Instant::now() + Duration::from_millis(100)));
-
-        group
-            .poll(&mut events, Some(Duration::from_millis(50)))
-            .unwrap();
-
-        assert_eq!(events.len(), 0);
-
-        group
-            .poll(&mut events, Some(Duration::from_millis(50)))
-            .unwrap();
-
-        assert_eq!(events[0], event);
-
-        events.clear();
-
-        group
-            .group
-            .readiness(event, Some(Instant::now() + Duration::from_millis(100)));
-
-        group
-            .poll(&mut events, Some(Duration::from_millis(150)))
-            .unwrap();
-
-        assert_eq!(events[0], event);
     }
 }

@@ -2,14 +2,13 @@
 
 use std::{
     net::SocketAddr,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 
 use boring::sha::Sha256;
-use crossbeam_utils::sync::Unparker;
-use quiche::{ConnectionId, Header, RecvInfo, SendInfo};
+use quiche::{ConnectionId, Header, RecvInfo};
 
-use crate::poll::{Error, Group, Result, utils::random_conn_id};
+use crate::poll::{Error, Result, utils::random_conn_id};
 
 /// Address validation trait.
 pub trait AddressValidator {
@@ -140,7 +139,7 @@ impl AddressValidator for SimpleAddressValidator {
 }
 
 /// Handshake result, returns by [`handshake`](Acceptor::handshake) function.
-pub enum Handshake {
+pub(super) enum Handshake {
     Handshake(usize),
     Accept(quiche::Connection),
 }
@@ -166,7 +165,7 @@ impl Acceptor {
     }
 
     /// Process quic handshake
-    pub fn handshake(
+    pub(super) fn handshake(
         &mut self,
         header: &Header<'_>,
         buf: &mut [u8],
@@ -320,82 +319,6 @@ impl Acceptor {
         };
 
         Ok(Handshake::Handshake(send_size))
-    }
-}
-
-/// Extension trait for server-side quic.
-pub trait ServerGroup {
-    fn server_dispatch(
-        &self,
-        acceptor: &mut Acceptor,
-        buf: &mut [u8],
-        recv_size: usize,
-        recv_info: RecvInfo,
-        unparker: Option<&Unparker>,
-    ) -> Result<(usize, SendInfo)>;
-}
-
-impl ServerGroup for Group {
-    fn server_dispatch(
-        &self,
-        acceptor: &mut Acceptor,
-        buf: &mut [u8],
-        recv_size: usize,
-        recv_info: RecvInfo,
-        unparker: Option<&Unparker>,
-    ) -> Result<(usize, SendInfo)> {
-        let header = quiche::Header::from_slice(&mut buf[..recv_size], quiche::MAX_CONN_ID_LEN)
-            .map_err(Error::Quiche)?;
-
-        match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, unparker) {
-            Ok((token, _)) => match self.send(token, buf) {
-                Err(Error::Busy) | Err(Error::Retry) => Ok((
-                    0,
-                    SendInfo {
-                        at: Instant::now(),
-                        from: recv_info.to,
-                        to: recv_info.from,
-                    },
-                )),
-                r => r,
-            },
-            Err(Error::NotFound) => match acceptor.handshake(&header, buf, recv_size, recv_info) {
-                Ok(Handshake::Accept(conn)) => {
-                    let token = self.register(conn)?;
-
-                    // Newly registered connections should be idle.
-                    match self.recv_(&header.dcid, &mut buf[..recv_size], recv_info, None) {
-                        Ok(_) => {}
-                        Err(Error::Busy) | Err(Error::Retry) => {
-                            unreachable!("Newly registered connections should be idle");
-                        }
-                        Err(err) => return Err(err),
-                    }
-
-                    match self.send(token, buf) {
-                        Err(Error::Busy) | Err(Error::Retry) => Ok((
-                            0,
-                            SendInfo {
-                                at: Instant::now(),
-                                from: recv_info.to,
-                                to: recv_info.from,
-                            },
-                        )),
-                        r => r,
-                    }
-                }
-                Ok(Handshake::Handshake(send_size)) => Ok((
-                    send_size,
-                    SendInfo {
-                        at: Instant::now(),
-                        from: recv_info.to,
-                        to: recv_info.from,
-                    },
-                )),
-                Err(err) => Err(err),
-            },
-            Err(err) => Err(err),
-        }
     }
 }
 

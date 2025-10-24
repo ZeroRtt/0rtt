@@ -26,6 +26,9 @@ pub enum Error {
 
     #[error("Failed to validate client address.")]
     ValidateAddress,
+
+    #[error("Maximumn currently opened streams.")]
+    MaxStreams,
 }
 
 impl From<Error> for std::io::Error {
@@ -37,7 +40,7 @@ impl From<Error> for std::io::Error {
             }
 
             Error::NotFound => std::io::Error::new(std::io::ErrorKind::NotFound, value),
-            Error::ValidateAddress => std::io::Error::other(value),
+            _ => std::io::Error::other(value),
         }
     }
 }
