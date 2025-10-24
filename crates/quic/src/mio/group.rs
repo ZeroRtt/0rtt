@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use quiche::RecvInfo;
 
 use crate::{
-    Acceptor, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
+    Acceptor, QuicBind, QuicClient, QuicPoll, QuicServerTransport, QuicTransport,
     mio::{
         buf::QuicBuf,
         udp::{QuicSocket, QuicSocketError},
@@ -44,49 +44,6 @@ pub struct Group {
 }
 
 impl Group {
-    /// Create a new `Group` and bind to `laddrs`.
-    pub fn bind<S>(laddrs: S, acceptor: Option<Acceptor>) -> Result<Self>
-    where
-        S: ToSocketAddrs,
-    {
-        let poll = mio::Poll::new()?;
-        let group = crate::poll::Group::new();
-
-        let mut sockets = vec![];
-        let mut addrs = HashMap::new();
-
-        for laddr in laddrs.to_socket_addrs()? {
-            let mut socket = UdpSocket::bind(laddr)?;
-            addrs.insert(socket.local_addr()?, sockets.len());
-
-            poll.registry().register(
-                &mut socket,
-                mio::Token(sockets.len()),
-                Interest::READABLE | Interest::WRITABLE,
-            )?;
-
-            sockets.push(QuicSocket::new(socket, 1024)?);
-        }
-
-        let waker = Waker::new(poll.registry(), mio::Token(sockets.len()))?;
-
-        Ok(Group {
-            waker,
-            group,
-            laddrs: addrs,
-            state: Mutex::new(PollState {
-                acceptor,
-                poll,
-                sockets,
-            }),
-        })
-    }
-
-    /// Returns local bound addresses.
-    pub fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
-        self.laddrs.keys()
-    }
-
     fn mio_poll_once(&self, poll_state: &mut PollState, deadline: Option<Instant>) -> Result<()> {
         let timeout = if let Some(next_release_time) = deadline {
             next_release_time.checked_duration_since(Instant::now())
@@ -380,8 +337,6 @@ impl QuicPoll for Group {
 
 #[cfg(feature = "client")]
 impl QuicClient for Group {
-    type Error = std::io::Error;
-
     fn connect(
         &self,
         server_name: Option<&str>,
@@ -396,5 +351,50 @@ impl QuicClient for Group {
         self.waker.wake()?;
 
         Ok(token?)
+    }
+}
+
+impl QuicBind for Group {
+    /// Returns local bound addresses.
+    fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
+        self.laddrs.keys()
+    }
+
+    /// Create a new `Group` and bind to `laddrs`.
+    fn bind<S>(laddrs: S, acceptor: Option<Acceptor>) -> Result<Self>
+    where
+        S: ToSocketAddrs,
+    {
+        let poll = mio::Poll::new()?;
+        let group = crate::poll::Group::new();
+
+        let mut sockets = vec![];
+        let mut addrs = HashMap::new();
+
+        for laddr in laddrs.to_socket_addrs()? {
+            let mut socket = UdpSocket::bind(laddr)?;
+            addrs.insert(socket.local_addr()?, sockets.len());
+
+            poll.registry().register(
+                &mut socket,
+                mio::Token(sockets.len()),
+                Interest::READABLE | Interest::WRITABLE,
+            )?;
+
+            sockets.push(QuicSocket::new(socket, 1024)?);
+        }
+
+        let waker = Waker::new(poll.registry(), mio::Token(sockets.len()))?;
+
+        Ok(Group {
+            waker,
+            group,
+            laddrs: addrs,
+            state: Mutex::new(PollState {
+                acceptor,
+                poll,
+                sockets,
+            }),
+        })
     }
 }

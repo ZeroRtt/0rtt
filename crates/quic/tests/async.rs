@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 
 use zerortt::{
     Acceptor, SimpleAddressValidator, StreamKind,
-    futures::{QuicConn, QuicListener},
+    mio::futures::{QuicConn, QuicListener},
 };
 
 fn mock_config(is_server: bool) -> Config {

@@ -474,3 +474,14 @@ fn test_client_stream_open_limits_bidi() {
         }
     }
 }
+
+#[test]
+fn test() {
+    fn a<I>(_i: I)
+    where
+        i32: From<I>,
+    {
+    }
+
+    a(1i32);
+}

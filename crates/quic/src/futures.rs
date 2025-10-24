@@ -18,7 +18,7 @@ use futures_util::FutureExt;
 use parking_lot::Mutex;
 
 use crate::{
-    QuicPoll,
+    QuicBind,
     mio::would_block::WouldBlock,
     poll::{Acceptor, StreamKind, Token},
 };
@@ -50,29 +50,38 @@ struct State {
     incoming_streams: HashMap<Token, VecDeque<u64>>,
 }
 
-pub struct GroupWorker {
-    group: crate::mio::Group,
+pub struct GroupWorker<Q> {
+    group: Q,
     state: Mutex<State>,
 }
 
 /// Asynchronous Runtime Binding for `QUIC` group.
-#[derive(Clone)]
-pub struct Group(Arc<GroupWorker>);
+pub struct Group<Q>(Arc<GroupWorker<Q>>);
 
-impl Debug for Group {
+impl<Q> Clone for Group<Q> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<Q> Debug for Group<Q> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Group").finish_non_exhaustive()
     }
 }
 
-impl Group {
+impl<Q> Group<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     /// Create a new `Group` and bind to `laddrs`.
     pub fn bind<S>(laddrs: S, acceptor: Option<Acceptor>) -> Result<Self>
     where
         S: ToSocketAddrs,
     {
         Ok(Self(Arc::new(GroupWorker {
-            group: crate::mio::Group::bind(laddrs, acceptor)?,
+            group: Q::bind(laddrs, acceptor)?,
             state: Default::default(),
         })))
     }
@@ -84,7 +93,7 @@ impl Group {
 
     /// Returns underlying poll api.
     #[inline]
-    pub fn poll(&self) -> &crate::mio::Group {
+    pub fn poll(&self) -> &Q {
         &self.0.group
     }
 
@@ -247,18 +256,18 @@ impl Group {
 
 /// future-awared `QUIC` connection socket.
 #[derive(Debug)]
-pub struct QuicConn(Group, Token, bool);
+pub struct QuicConn<Q>(Group<Q>, Token, bool)
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>;
 
-impl Drop for QuicConn {
+impl<Q> Drop for QuicConn<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     fn drop(&mut self) {
-        assert!(
-            self.0
-                .0
-                .group
-                .close(self.1, false, 0x0, b"".into())
-                .would_block()
-                .is_ready()
-        );
+        _ = self.0.0.group.close(self.1, false, 0x0, b"".into());
 
         if self.2 {
             self.0.stop();
@@ -266,7 +275,11 @@ impl Drop for QuicConn {
     }
 }
 
-impl QuicConn {
+impl<Q> QuicConn<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     /// Returns associated underlying `Token` value of this `QuicConn`.
     #[inline]
     pub fn token(&self) -> Token {
@@ -295,7 +308,7 @@ impl QuicConn {
 
     /// Accepts a new incoming stream from this `connection`.
     #[inline]
-    pub async fn accept(&self) -> Result<QuicStream> {
+    pub async fn accept(&self) -> Result<QuicStream<Q>> {
         poll_fn(|ctx| {
             let mut state = self.0.0.state.lock();
 
@@ -333,7 +346,11 @@ impl QuicConn {
     }
 
     /// Open a new outbound stream.
-    pub async fn open(&self, kind: StreamKind, max_streams_as_error: bool) -> Result<QuicStream> {
+    pub async fn open(
+        &self,
+        kind: StreamKind,
+        max_streams_as_error: bool,
+    ) -> Result<QuicStream<Q>> {
         let event = match kind {
             StreamKind::Uni => Event::StreamOpenUni,
             StreamKind::Bidi => Event::StreamOpenBidi,
@@ -362,9 +379,9 @@ impl QuicConn {
                 .0
                 .group
                 .stream_open(self.1, kind, max_streams_as_error)
-                .would_block()?
+                .map_err(|err| Error::from(err))
             {
-                Poll::Ready(stream_id) => {
+                Ok(stream_id) => {
                     let mut state = self.0.0.state.lock();
                     state.wakers.get_mut(&self.1).unwrap().remove(&event);
 
@@ -376,7 +393,8 @@ impl QuicConn {
                         remote: false,
                     }))
                 }
-                Poll::Pending => Poll::Pending,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => Poll::Pending,
+                Err(err) => Poll::Ready(Err(err)),
             }
         })
         .await
@@ -384,21 +402,33 @@ impl QuicConn {
 }
 
 /// future-awared `QUIC` stream socket.
-pub struct QuicStream {
-    group: Group,
+pub struct QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
+    group: Group<Q>,
     token: Token,
     stream_id: u64,
     shutdown: AtomicBool,
     remote: bool,
 }
 
-impl Display for QuicStream {
+impl<Q> Display for QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "QuicStream({},{})", self.token.0, self.stream_id)
     }
 }
 
-impl Debug for QuicStream {
+impl<Q> Debug for QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QuicStream")
             .field("token", &self.token)
@@ -407,13 +437,21 @@ impl Debug for QuicStream {
     }
 }
 
-impl Drop for QuicStream {
+impl<Q> Drop for QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     fn drop(&mut self) {
         _ = self.shutdown();
     }
 }
 
-impl QuicStream {
+impl<Q> QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
     /// Write data over this `stream`.
     pub async fn send(&self, buf: &[u8], fin: bool) -> Result<usize> {
         let event = Event::StreamSend(self.stream_id);
@@ -445,15 +483,16 @@ impl QuicStream {
                 .0
                 .group
                 .stream_send(self.token, self.stream_id, buf, fin)
-                .would_block()?
+                .map_err(|err| Error::from(err))
             {
-                Poll::Ready(send_size) => {
+                Ok(send_size) => {
                     let mut state = self.group.0.state.lock();
                     state.wakers.get_mut(&self.token).unwrap().remove(&event);
 
                     Poll::Ready(Ok(send_size))
                 }
-                Poll::Pending => Poll::Pending,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => Poll::Pending,
+                Err(err) => Poll::Ready(Err(err)),
             }
         })
         .await
@@ -497,15 +536,16 @@ impl QuicStream {
                 .0
                 .group
                 .stream_recv(self.token, self.stream_id, buf)
-                .would_block()?
+                .map_err(|err| Error::from(err))
             {
-                Poll::Ready((read_size, fin)) => {
+                Ok((read_size, fin)) => {
                     let mut state = self.group.0.state.lock();
                     state.wakers.get_mut(&self.token).unwrap().remove(&event);
 
                     Poll::Ready(Ok((read_size, fin)))
                 }
-                Poll::Pending => Poll::Pending,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => Poll::Pending,
+                Err(err) => Poll::Ready(Err(err)),
             }
         })
         .await
@@ -543,6 +583,7 @@ impl QuicStream {
                 .0
                 .group
                 .stream_shutdown(self.token, self.stream_id, 0x0)
+                .map_err(|err| Error::from(err))
                 .would_block()?,
             Poll::Ready(())
         );
@@ -553,11 +594,14 @@ impl QuicStream {
 
 #[cfg(not(feature = "tokio"))]
 mod futures {
-
     use super::*;
     use futures_io::{AsyncRead, AsyncWrite};
 
-    impl AsyncRead for QuicStream {
+    impl<Q> AsyncRead for QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -569,7 +613,11 @@ mod futures {
         }
     }
 
-    impl AsyncWrite for QuicStream {
+    impl<Q> AsyncWrite for QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_write(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -605,7 +653,11 @@ mod futures {
         }
     }
 
-    impl AsyncRead for &QuicStream {
+    impl<Q> AsyncRead for &QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -617,7 +669,11 @@ mod futures {
         }
     }
 
-    impl AsyncWrite for &QuicStream {
+    impl<Q> AsyncWrite for &QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_write(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -660,7 +716,11 @@ mod tokio_impl {
 
     use super::*;
 
-    impl tokio::io::AsyncRead for QuicStream {
+    impl<Q> tokio::io::AsyncRead for QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -678,7 +738,11 @@ mod tokio_impl {
         }
     }
 
-    impl tokio::io::AsyncWrite for QuicStream {
+    impl<Q> tokio::io::AsyncWrite for QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_write(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -715,7 +779,11 @@ mod tokio_impl {
         }
     }
 
-    impl tokio::io::AsyncRead for &QuicStream {
+    impl<Q> tokio::io::AsyncRead for &QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -733,7 +801,11 @@ mod tokio_impl {
         }
     }
 
-    impl tokio::io::AsyncWrite for &QuicStream {
+    impl<Q> tokio::io::AsyncWrite for &QuicStream<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn poll_write(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
@@ -777,15 +849,26 @@ mod server {
     use super::*;
 
     /// A **server-side** socket that accept inbound `QUIC` connections/streams.
-    pub struct QuicListener(Group, bool);
+    pub struct QuicListener<Q>(Group<Q>, bool)
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>;
 
-    impl From<Group> for QuicListener {
-        fn from(value: Group) -> Self {
+    impl<Q> From<Group<Q>> for QuicListener<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
+        fn from(value: Group<Q>) -> Self {
             Self(value, false)
         }
     }
 
-    impl Drop for QuicListener {
+    impl<Q> Drop for QuicListener<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
         fn drop(&mut self) {
             // own the group.
             if self.1 {
@@ -794,7 +877,11 @@ mod server {
         }
     }
 
-    impl QuicListener {
+    impl<Q> QuicListener<Q>
+    where
+        Q: QuicBind + 'static,
+        std::io::Error: From<Q::Error>,
+    {
         /// Create `QuicListener` with private `Qroup` and background thread.
         pub fn bind<S>(laddrs: S, acceptor: Acceptor) -> Result<Self>
         where
@@ -821,7 +908,7 @@ mod server {
 
         /// Accepts a new incoming connection from this listener.
         #[inline]
-        pub async fn accept(&self) -> Result<QuicConn> {
+        pub async fn accept(&self) -> Result<QuicConn<Q>> {
             poll_fn(|ctx| {
                 let mut state = self.0.0.state.lock();
 
@@ -856,15 +943,26 @@ mod client {
     use super::*;
 
     /// Connector for `QUIC` client-side.
-    pub struct QuicConnector(Group);
+    pub struct QuicConnector<Q>(Group<Q>)
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>;
 
-    impl From<Group> for QuicConnector {
-        fn from(value: Group) -> Self {
+    impl<Q> From<Group<Q>> for QuicConnector<Q>
+    where
+        Q: QuicBind,
+        std::io::Error: From<Q::Error>,
+    {
+        fn from(value: Group<Q>) -> Self {
             Self(value)
         }
     }
 
-    impl QuicConnector {
+    impl<Q> QuicConnector<Q>
+    where
+        Q: QuicBind + QuicClient,
+        std::io::Error: From<Q::Error>,
+    {
         /// Create a new `outbound` connection.
         pub fn create(
             &self,
@@ -872,7 +970,7 @@ mod client {
             local: SocketAddr,
             peer: SocketAddr,
             config: &mut quiche::Config,
-        ) -> Result<QuicConn> {
+        ) -> Result<QuicConn<Q>> {
             let token = self.0.0.group.connect(server_name, local, peer, config)?;
 
             Ok(QuicConn(self.0.clone(), token, false))
@@ -885,7 +983,7 @@ mod client {
             local: SocketAddr,
             peer: SocketAddr,
             config: &mut quiche::Config,
-        ) -> Result<QuicConn> {
+        ) -> Result<QuicConn<Q>> {
             let conn = self.create(server_name, local, peer, config)?;
 
             conn.is_established().await?;
@@ -894,7 +992,11 @@ mod client {
         }
     }
 
-    impl QuicConn {
+    impl<Q> QuicConn<Q>
+    where
+        Q: QuicBind + QuicClient + 'static,
+        std::io::Error: From<Q::Error>,
+    {
         /// Establish a client-side connection with private group and background thread.
         pub async fn connect(
             server_name: Option<&str>,

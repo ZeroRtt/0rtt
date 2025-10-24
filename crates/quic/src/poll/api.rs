@@ -1,4 +1,8 @@
-use std::{borrow::Cow, net::SocketAddr, time::Instant};
+use std::{
+    borrow::Cow,
+    net::{SocketAddr, ToSocketAddrs},
+    time::Instant,
+};
 
 use quiche::{Config, RecvInfo, SendInfo};
 
@@ -7,7 +11,7 @@ use crate::Acceptor;
 use crate::{Event, StreamKind, Token};
 
 /// A poll api for `QUIC` group.
-pub trait QuicPoll {
+pub trait QuicPoll: Send + Sync {
     type Error;
     /// Waits for readiness events without blocking current thread
     /// and returns possible retry time duration.
@@ -78,8 +82,7 @@ pub trait QuicPoll {
 /// `API` for client-side `QUIC`.
 #[cfg(feature = "client")]
 #[cfg_attr(docsrs, doc(cfg(feature = "client")))]
-pub trait QuicClient {
-    type Error;
+pub trait QuicClient: QuicPoll {
     /// Creates a new client-side connection.
     fn connect(
         &self,
@@ -114,4 +117,15 @@ pub trait QuicServerTransport: QuicTransport {
         recv_info: RecvInfo,
         unparker: Option<&crossbeam_utils::sync::Unparker>,
     ) -> Result<(usize, SendInfo), Self::Error>;
+}
+
+/// A `group` with underlying transport layer.
+pub trait QuicBind: QuicPoll + Sized {
+    /// Create a new `Group` and bind it to `laddrs`.
+    fn bind<S>(laddrs: S, acceptor: Option<Acceptor>) -> Result<Self, Self::Error>
+    where
+        S: ToSocketAddrs;
+
+    /// Returns local bound addresses.
+    fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr>;
 }

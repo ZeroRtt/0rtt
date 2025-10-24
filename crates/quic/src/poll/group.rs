@@ -495,7 +495,6 @@ impl QuicServerTransport for Group {
 }
 
 impl QuicClient for Group {
-    type Error = crate::Error;
     fn connect(
         &self,
         server_name: Option<&str>,
