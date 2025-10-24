@@ -1,0 +1,23 @@
+[package]
+description = "Primitive types and traits for zerortt"
+documentation = "https://docs.rs/zerortt"
+edition = "2024"
+license = "MIT"
+name = "zerortt-api"
+repository = "https://github.com/ZeroRtt/0rtt/crates/api"
+version.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+quiche = { version = "^0.24", default-features = false, features = [
+    "boringssl-boring-crate",
+] }
+boring = { version = "^4.17", optional=true }
+crossbeam-utils = { version="0.8.21", optional=true }
+thiserror = "^2.0"
+log = { version = "^0.4" }
+
+[features]
+default = ["client","server"]
+server = ["crossbeam-utils","boring"]
+client = []
