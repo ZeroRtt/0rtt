@@ -15,6 +15,7 @@ crossbeam-utils = { version="0.8.21" }
 mio = {version = "1.0.4", features=["os-poll","net"] }
 parking_lot = "0.12.4"
 log = { version = "^0.4" }
+metricrs = { version = "^0.1" }
 
 zerortt-api = { version = "^0.1" , path="../api"}
 zerortt-poll = { version = "^0.1" , path="../poll" }

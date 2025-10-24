@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
+use metricrs::{Counter, global::get_global_registry};
 use mio::{event::Source, net::UdpSocket};
 use zerortt_api::WouldBlock;
 
@@ -33,6 +34,8 @@ pub struct QuicSocket {
     sending: VecDeque<(QuicBuf, SocketAddr)>,
     socket: UdpSocket,
     local_addr: SocketAddr,
+    send_counter: Option<Counter>,
+    recv_counter: Option<Counter>,
 }
 
 impl Source for QuicSocket {
@@ -65,11 +68,30 @@ impl Source for QuicSocket {
 impl QuicSocket {
     /// Wrap a new `QuicSocket` from `mio::UdpSocket`.
     pub fn new(socket: UdpSocket, sending_buffer_limits: usize) -> Result<Self> {
+        let local_addr = socket.local_addr()?;
+
+        let (send_counter, recv_counter) = if let Some(registry) = get_global_registry() {
+            (
+                Some(registry.counter(metricrs::Token::new(
+                    "quic.socket.send",
+                    &[("laddr", local_addr.to_string().as_str())],
+                ))),
+                Some(registry.counter(metricrs::Token::new(
+                    "quic.socket.recv",
+                    &[("laddr", local_addr.to_string().as_str())],
+                ))),
+            )
+        } else {
+            (None, None)
+        };
+
         Ok(Self {
-            local_addr: socket.local_addr()?,
+            local_addr,
             sending_buffer_limits,
             sending: Default::default(),
             socket,
+            send_counter,
+            recv_counter,
         })
     }
 
@@ -92,6 +114,11 @@ impl QuicSocket {
 
             self.socket
                 .send_to(buf.readable_buf(), *target)
+                .inspect(|send_size| {
+                    if let Some(send_counter) = &self.send_counter {
+                        send_counter.increment(*send_size as u64);
+                    }
+                })
                 .inspect_err(|err| {
                     if err.kind() == ErrorKind::WouldBlock {
                         log::trace!("quic socket send data, pending");
@@ -148,6 +175,12 @@ impl QuicSocket {
                     log::error!("quic socket recv data, err={}", err);
                 }
             })?;
+
+        if read_size > 0 {
+            if let Some(counter) = &self.recv_counter {
+                counter.increment(read_size as u64);
+            }
+        }
 
         log::trace!("quic socket recv data, len={}, from={}", read_size, from);
 

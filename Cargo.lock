@@ -731,6 +731,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "metricrs"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3953b01153c1c9d23fc1b3e27c4c2d0c1254fbc59377b18de115200c83e3e0a"
+dependencies = [
+ "metricrs-derive",
+]
+
+[[package]]
+name = "metricrs-derive"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4978af66e09ec188f2af97dc34148d388edd33a0cdede5cebc762e2a1d9f994b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1597,6 +1617,7 @@ dependencies = [
  "crossbeam-utils",
  "fixedbuf",
  "log",
+ "metricrs",
  "mio",
  "parking_lot",
  "thiserror",
