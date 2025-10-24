@@ -423,3 +423,21 @@ impl Group {
         state.readiness.borrow_mut().insert(event, delay_to);
     }
 }
+
+/// A poll api for `QUIC` group.
+pub trait Polling {
+    /// Waits for readiness events without blocking current thread
+    /// and returns possible retry time duration.
+    fn poll(&self, events: &mut Vec<Event>) -> Option<Instant>;
+
+    /// Wrap and handle a new `quiche::Connection`.
+    ///
+    /// On success, returns a reference handle [`Token`] to the [`Connection`](quiche::Connection).
+    fn register(&self, wrapped: quiche::Connection) -> Result<Token>;
+
+    /// Unwrap a `quiche::Connection` referenced by the handle [`Token`].
+    fn deregister(&self, token: Token) -> Result<quiche::Connection>;
+
+    /// Returns the number of `QUIC` connections in the group.
+    fn len(&self) -> usize;
+}
