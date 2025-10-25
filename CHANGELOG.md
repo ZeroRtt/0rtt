@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.20] - 2025-10-25
+
+- remove `*-tokio` features.
+
 ## [0.1.19] - 2025-10-24
 
 - sub crates: split `zerortt` into subcrates.
