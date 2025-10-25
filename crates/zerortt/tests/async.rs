@@ -131,7 +131,7 @@ async fn stream_bidi() {
     });
 
     for i in 0..100 {
-        let stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
+        let stream = client_conn.open(StreamKind::Bidi).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -177,7 +177,7 @@ async fn stream_uni() {
     });
 
     for i in 0..100 {
-        let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
+        let stream = client_conn.open(StreamKind::Uni).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -221,7 +221,7 @@ async fn stream_io() {
     for i in 0..100 {
         use futures_util::AsyncReadExt;
 
-        let mut stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
+        let mut stream = client_conn.open(StreamKind::Bidi).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -264,7 +264,7 @@ async fn multi_conn() {
         .await
         .unwrap();
 
-        let stream = client_conn.open(StreamKind::Uni, false).await.unwrap();
+        let stream = client_conn.open(StreamKind::Uni).await.unwrap();
 
         let msg = format!("Send {}", i);
 
@@ -306,7 +306,7 @@ async fn stream_shutdown() {
     });
 
     for i in 0..100 {
-        let stream = Arc::new(client_conn.open(StreamKind::Bidi, false).await.unwrap());
+        let stream = Arc::new(client_conn.open(StreamKind::Bidi).await.unwrap());
 
         let msg = format!("Send {}", i);
 

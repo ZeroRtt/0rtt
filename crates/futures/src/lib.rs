@@ -343,11 +343,23 @@ where
     }
 
     /// Open a new outbound stream.
-    pub async fn open(
+    #[inline]
+    pub async fn open(&self, kind: StreamKind) -> Result<QuicStream<Q>> {
+        Ok(self.open_prv(kind, false).await?.unwrap())
+    }
+
+    /// Open a new outbound stream.
+    #[inline]
+    pub async fn open_non_blocking(&self, kind: StreamKind) -> Result<Option<QuicStream<Q>>> {
+        self.open_prv(kind, true).await
+    }
+
+    /// Open a new outbound stream.
+    async fn open_prv(
         &self,
         kind: StreamKind,
-        max_streams_as_error: bool,
-    ) -> Result<QuicStream<Q>> {
+        non_blocking: bool,
+    ) -> Result<Option<QuicStream<Q>>> {
         let event = match kind {
             StreamKind::Uni => Event::StreamOpenUni,
             StreamKind::Bidi => Event::StreamOpenBidi,
@@ -375,20 +387,20 @@ where
                 .0
                 .0
                 .group
-                .stream_open(self.1, kind, max_streams_as_error)
+                .stream_open(self.1, kind, non_blocking)
                 .map_err(|err| Error::from(err))
             {
                 Ok(stream_id) => {
                     let mut state = self.0.0.state.lock();
                     state.wakers.get_mut(&self.1).unwrap().remove(&event);
 
-                    Poll::Ready(Ok(QuicStream {
+                    Poll::Ready(Ok(stream_id.map(|stream_id| QuicStream {
                         group: self.0.clone(),
                         token: self.1,
                         stream_id,
                         shutdown: Default::default(),
                         remote: false,
-                    }))
+                    })))
                 }
                 Err(err) if err.kind() == ErrorKind::WouldBlock => Poll::Pending,
                 Err(err) => Poll::Ready(Err(err)),

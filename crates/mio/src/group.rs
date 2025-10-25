@@ -271,9 +271,9 @@ impl QuicPoll for Group {
         &self,
         token: Token,
         kind: StreamKind,
-        max_streams_as_error: bool,
-    ) -> Result<u64> {
-        let r = self.group.stream_open(token, kind, max_streams_as_error);
+        non_blocking: bool,
+    ) -> Result<Option<u64>> {
+        let r = self.group.stream_open(token, kind, non_blocking);
 
         self.waker.wake()?;
 

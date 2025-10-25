@@ -244,16 +244,13 @@ impl QuicPoll for Group {
         &self,
         token: Token,
         kind: StreamKind,
-        max_streams_as_error: bool,
-    ) -> Result<u64> {
+        non_blocking: bool,
+    ) -> Result<Option<u64>> {
         let state = self.state.lock();
         let conn = state.conns.get(&token).ok_or_else(|| Error::NotFound)?;
 
-        conn.borrow_mut().stream_open(
-            kind,
-            max_streams_as_error,
-            state.readiness.borrow_mut().deref_mut(),
-        )
+        conn.borrow_mut()
+            .stream_open(kind, non_blocking, state.readiness.borrow_mut().deref_mut())
     }
 
     /// Shutdown a stream.

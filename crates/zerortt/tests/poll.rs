@@ -232,6 +232,7 @@ fn test_client_stream_open_bidi() {
                 EventKind::Connected => {
                     let stream_id = group
                         .stream_open(event.token, StreamKind::Bidi, false)
+                        .unwrap()
                         .unwrap();
 
                     group
@@ -283,6 +284,7 @@ fn test_client_stream_open_uni() {
                 EventKind::Connected => {
                     let stream_id = group
                         .stream_open(event.token, StreamKind::Uni, false)
+                        .unwrap()
                         .unwrap();
 
                     group
@@ -336,6 +338,7 @@ fn test_client_stream_open_limits_uni() {
                 EventKind::Connected => {
                     let stream_id = group
                         .stream_open(event.token, StreamKind::Uni, false)
+                        .unwrap()
                         .unwrap();
 
                     group
@@ -368,7 +371,7 @@ fn test_client_stream_open_limits_uni() {
                     log::trace!("counter: {}", counter);
 
                     let stream_id = match group.stream_open(event.token, StreamKind::Uni, false) {
-                        Ok(stream_id) => stream_id,
+                        Ok(stream_id) => stream_id.unwrap(),
                         Err(Error::Retry) => {
                             continue;
                         }
@@ -416,6 +419,7 @@ fn test_client_stream_open_limits_bidi() {
                 EventKind::Connected => {
                     let stream_id = group
                         .stream_open(event.token, StreamKind::Bidi, false)
+                        .unwrap()
                         .unwrap();
 
                     group
@@ -452,7 +456,7 @@ fn test_client_stream_open_limits_bidi() {
                     log::trace!("counter: {}", counter);
 
                     let stream_id = match group.stream_open(event.token, StreamKind::Bidi, false) {
-                        Ok(stream_id) => stream_id,
+                        Ok(stream_id) => stream_id.unwrap(),
                         Err(Error::Retry) => {
                             continue;
                         }

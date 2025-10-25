@@ -207,8 +207,8 @@ pub trait QuicPoll: Send + Sync {
         &self,
         token: Token,
         kind: StreamKind,
-        max_streams_as_error: bool,
-    ) -> std::result::Result<u64, Self::Error>;
+        non_blocking: bool,
+    ) -> std::result::Result<Option<u64>, Self::Error>;
 
     ///Shuts down reading and writing from/to the specified stream.
     ///
