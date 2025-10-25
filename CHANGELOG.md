@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for
 compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.21] - 2025-10-25
+
+- futures: splite fn `QuicConn::open` into `QuicConn::open` and `QuicConn::open_non_blocking`.
+
 ## [0.1.20] - 2025-10-25
 
 - remove `*-tokio` features.
