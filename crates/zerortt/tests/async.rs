@@ -1,10 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-#[cfg(not(feature = "tokio"))]
 use futures_util::AsyncWriteExt;
-
-#[cfg(feature = "tokio")]
-use tokio::io::AsyncWriteExt;
 
 use zerortt::{
     Acceptor, SimpleAddressValidator, StreamKind,
@@ -211,10 +207,7 @@ async fn stream_io() {
 
     tokio::spawn(async move {
         loop {
-            #[cfg(not(feature = "tokio"))]
             use futures_util::AsyncReadExt;
-            #[cfg(feature = "tokio")]
-            use tokio::io::AsyncReadExt;
 
             let mut stream = server_conn.accept().await.unwrap();
 
@@ -226,10 +219,8 @@ async fn stream_io() {
     });
 
     for i in 0..100 {
-        #[cfg(not(feature = "tokio"))]
-        use futures_util::{AsyncReadExt, AsyncWriteExt};
-        #[cfg(feature = "tokio")]
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use futures_util::AsyncReadExt;
+
         let mut stream = client_conn.open(StreamKind::Bidi, false).await.unwrap();
 
         let msg = format!("Send {}", i);
@@ -326,10 +317,7 @@ async fn stream_shutdown() {
         let stream_shutdown = stream.clone();
 
         tokio::spawn(async move {
-            #[cfg(not(feature = "tokio"))]
             stream_shutdown.as_ref().close().await.unwrap();
-            #[cfg(feature = "tokio")]
-            stream_shutdown.as_ref().shutdown().await.unwrap();
         });
 
         let mut buf = vec![0; 100];

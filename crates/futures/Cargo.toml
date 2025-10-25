@@ -13,9 +13,8 @@ parking_lot = "0.12.4"
 log = { version = "^0.4" }
 futures-io = { version="0.3.31" }
 futures-util = { version="0.3.31" }
-tokio = { version="1.47.1", optional=true }
 
-zerortt-api = { version = "^0.1" , path="../api", default-features = false}
+zerortt-api = { version = "^0.1" , path="../api", default-features = false }
 zerortt-poll = { version = "^0.1" , path="../poll" }
 
 
@@ -23,4 +22,3 @@ zerortt-poll = { version = "^0.1" , path="../poll" }
 default = ["client","server"]
 server = ["zerortt-api/server"]
 client = ["zerortt-api/client"]
-tokio = ["dep:tokio"]

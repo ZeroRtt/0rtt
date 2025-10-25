@@ -15,6 +15,7 @@ use std::{
     time::Instant,
 };
 
+use futures_io::{AsyncRead, AsyncWrite};
 use futures_util::FutureExt;
 use parking_lot::Mutex;
 use zerortt_api::{Acceptor, EventKind, QuicBind, StreamKind, Token, WouldBlock};
@@ -588,254 +589,116 @@ where
     }
 }
 
-#[cfg(not(feature = "tokio"))]
-mod futures {
-    use super::*;
-    use futures_io::{AsyncRead, AsyncWrite};
-
-    impl<Q> AsyncRead for QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize>> {
-            Box::pin(self.recv(buf))
-                .poll_unpin(cx)
-                .map(|r| r.map(|(read_size, _)| read_size))
-        }
-    }
-
-    impl<Q> AsyncWrite for QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_write(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> Poll<Result<usize>> {
-            Box::pin(self.send(buf, false)).poll_unpin(cx)
-        }
-
-        fn poll_flush(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> Poll<Result<()>> {
-            let state = self.group.0.state.lock();
-
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_close(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> Poll<Result<()>> {
-            self.shutdown()?;
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl<Q> AsyncRead for &QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize>> {
-            Box::pin(self.recv(buf))
-                .poll_unpin(cx)
-                .map(|r| r.map(|(read_size, _)| read_size))
-        }
-    }
-
-    impl<Q> AsyncWrite for &QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_write(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> Poll<Result<usize>> {
-            Box::pin(self.send(buf, false)).poll_unpin(cx)
-        }
-
-        fn poll_flush(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> Poll<Result<()>> {
-            let state = self.group.0.state.lock();
-
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_close(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> Poll<Result<()>> {
-            self.shutdown()?;
-
-            Poll::Ready(Ok(()))
-        }
+impl<Q> AsyncRead for QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize>> {
+        Box::pin(self.recv(buf))
+            .poll_unpin(cx)
+            .map(|r| r.map(|(read_size, _)| read_size))
     }
 }
 
-#[cfg(feature = "tokio")]
-mod tokio_impl {
-
-    use super::*;
-
-    impl<Q> tokio::io::AsyncRead for QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut tokio::io::ReadBuf<'_>,
-        ) -> Poll<std::io::Result<()>> {
-            let read_size = match Box::pin(self.recv(buf.initialize_unfilled())).poll_unpin(cx) {
-                Poll::Ready(Ok((read_size, _))) => read_size,
-                Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                Poll::Pending => return Poll::Pending,
-            };
-
-            buf.advance(read_size);
-
-            Poll::Ready(Ok(()))
-        }
+impl<Q> AsyncWrite for QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize>> {
+        Box::pin(self.send(buf, false)).poll_unpin(cx)
     }
 
-    impl<Q> tokio::io::AsyncWrite for QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_write(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> Poll<std::result::Result<usize, std::io::Error>> {
-            Box::pin(self.send(buf, false)).poll_unpin(cx)
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<()>> {
+        let state = self.group.0.state.lock();
+
+        if state.stopped {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::BrokenPipe,
+                "Stopped, backgroud group.",
+            )));
         }
 
-        fn poll_flush(
-            self: std::pin::Pin<&mut Self>,
-            _: &mut std::task::Context<'_>,
-        ) -> Poll<std::result::Result<(), std::io::Error>> {
-            let state = self.group.0.state.lock();
+        drop(state);
 
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
-
-            drop(state);
-
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(
-            self: std::pin::Pin<&mut Self>,
-            _: &mut std::task::Context<'_>,
-        ) -> Poll<std::result::Result<(), std::io::Error>> {
-            self.shutdown()?;
-
-            Poll::Ready(Ok(()))
-        }
+        Poll::Ready(Ok(()))
     }
 
-    impl<Q> tokio::io::AsyncRead for &QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_read(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut tokio::io::ReadBuf<'_>,
-        ) -> Poll<std::io::Result<()>> {
-            let read_size = match Box::pin(self.recv(buf.initialize_unfilled())).poll_unpin(cx) {
-                Poll::Ready(Ok((read_size, _))) => read_size,
-                Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                Poll::Pending => return Poll::Pending,
-            };
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<()>> {
+        self.shutdown()?;
+        Poll::Ready(Ok(()))
+    }
+}
 
-            buf.advance(read_size);
+impl<Q> AsyncRead for &QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize>> {
+        Box::pin(self.recv(buf))
+            .poll_unpin(cx)
+            .map(|r| r.map(|(read_size, _)| read_size))
+    }
+}
 
-            Poll::Ready(Ok(()))
-        }
+impl<Q> AsyncWrite for &QuicStream<Q>
+where
+    Q: QuicBind,
+    std::io::Error: From<Q::Error>,
+{
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize>> {
+        Box::pin(self.send(buf, false)).poll_unpin(cx)
     }
 
-    impl<Q> tokio::io::AsyncWrite for &QuicStream<Q>
-    where
-        Q: QuicBind,
-        std::io::Error: From<Q::Error>,
-    {
-        fn poll_write(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> Poll<std::result::Result<usize, std::io::Error>> {
-            Box::pin(self.send(buf, false)).poll_unpin(cx)
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<()>> {
+        let state = self.group.0.state.lock();
+
+        if state.stopped {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::BrokenPipe,
+                "Stopped, backgroud group.",
+            )));
         }
 
-        fn poll_flush(
-            self: std::pin::Pin<&mut Self>,
-            _: &mut std::task::Context<'_>,
-        ) -> Poll<std::result::Result<(), std::io::Error>> {
-            let state = self.group.0.state.lock();
+        drop(state);
 
-            if state.stopped {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::BrokenPipe,
-                    "Stopped, backgroud group.",
-                )));
-            }
+        Poll::Ready(Ok(()))
+    }
 
-            drop(state);
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<()>> {
+        self.shutdown()?;
 
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(
-            self: std::pin::Pin<&mut Self>,
-            _: &mut std::task::Context<'_>,
-        ) -> Poll<std::result::Result<(), std::io::Error>> {
-            self.shutdown()?;
-
-            Poll::Ready(Ok(()))
-        }
+        Poll::Ready(Ok(()))
     }
 }
 
